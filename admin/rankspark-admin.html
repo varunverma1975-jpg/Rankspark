@@ -906,7 +906,7 @@ const trend = (cur, prev) => {
    ═══════════════════════════════════════════════════════════════════════ */
 route('dashboard', async host => {
   const [rollups, users, books, sessions, payments] = await Promise.all([
-    db.list('rollups'), db.list('users'), db.list('books'),
+    db.list('analyticsRollups'), db.list('users'), db.list('books'),
     db.list('sessions'), db.list('payments')
   ]);
 
