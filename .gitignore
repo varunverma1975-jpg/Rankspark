@@ -1,0 +1,13 @@
+node_modules/
+.vercel/
+.DS_Store
+*.log
+
+# Never commit credentials. The Firebase *web* config in the built HTML is a
+# public identifier and is fine; a service-account key or a Razorpay secret is
+# not. Both belong in environment variables only.
+.env
+.env.*
+serviceAccount*.json
+*service-account*.json
+firebase-adminsdk-*.json

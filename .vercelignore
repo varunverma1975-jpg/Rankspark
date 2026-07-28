@@ -1,0 +1,13 @@
+# Build sources and test harnesses are not needed at runtime. The deployed
+# surface is ranksparks.html, the /api routes, and /admin.
+#
+# NOTE: admin/js and admin/css are deliberately NOT excluded — admin/index.html
+# loads them as ES modules, and on a real https origin (unlike file://) that
+# works. Excluding them would leave a broken admin page.
+work/
+uploads/
+admin/functions/
+admin/firestore.rules.test.mjs
+admin/build.py
+admin/README.md
+PREMIUM-IMPLEMENTATION.md

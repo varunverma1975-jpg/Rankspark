@@ -1,0 +1,374 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   RANKSPARK — ANALYTICS REDESIGN  (part 4)
+   ───────────────────────────────────────────────────────────────────────────
+   Replaces the hub-and-spoke drill-down with a single scannable page:
+   sticky controls → verdict → next actions → one ranked table → trends.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── FIX: the legacy analytics layer is invisible ────────────────────────
+   `.x-in` declares opacity:0 + `animation: xIn … forwards`, but the motion
+   layer's `#anx>*` selector (ID beats class) replaces `animation` with
+   `mLift … backwards`. A `backwards` fill reverts to the base style once the
+   animation ends, so every panel settles back at opacity:0 — the whole page
+   paints blank unless prefers-reduced-motion is on. We retire that container
+   and render into #anx2 instead, with a fill mode that actually sticks.     */
+/* NOTE: the legacy container is retired from JS (see part4.js `retire()`),
+   not from here. Its own rule `#anx{display:block!important}` lives in a
+   <style> block later in the document than this stylesheet; with equal
+   specificity and both !important, source order wins and theirs is last.
+   An inline style set on the element outranks any stylesheet rule. */
+
+/* The legacy range + subject selects live in the page header and duplicate
+   the sticky bar's controls. Two sets of filters in two places is the single
+   most confusing thing about the old page, so the header pair is retired.
+   #a2-range keeps #analytics-range in sync, so any other code reading the
+   original element still sees the right value. */
+#page-analytics .page-heading select { display: none !important; }
+#page-analytics .page-heading > div:last-child > .pill { display: none !important; }
+
+#anx2 {
+  display: block; max-width: 1180px; margin: 0 auto; padding-bottom: 40px;
+  --a2-ease: cubic-bezier(.22, 1, .36, 1);
+}
+#anx2 * { box-sizing: border-box; min-width: 0; }
+
+/* Entrance: `both` fill, and scoped so no ID-level rule can outrank it. */
+#anx2 > .a2-r { opacity: 0; animation: a2In .5s var(--a2-ease) both; }
+#anx2 > .a2-r:nth-child(1) { animation-delay: 0ms }
+#anx2 > .a2-r:nth-child(2) { animation-delay: 50ms }
+#anx2 > .a2-r:nth-child(3) { animation-delay: 100ms }
+#anx2 > .a2-r:nth-child(4) { animation-delay: 150ms }
+#anx2 > .a2-r:nth-child(5) { animation-delay: 200ms }
+#anx2 > .a2-r:nth-child(n+6) { animation-delay: 240ms }
+@keyframes a2In { from { opacity: 0; transform: translateY(14px) } to { opacity: 1; transform: none } }
+
+@media (prefers-reduced-motion: reduce) {
+  #anx2 > .a2-r { animation: none !important; opacity: 1 !important; transform: none !important; }
+  #anx2 * { transition: none !important; }
+}
+
+/* ─── sticky control bar ─────────────────────────────────────────────────
+   Range + book scope + section jump, unified in one place that survives
+   scrolling. Previously range lived in the page header (scrolled away) and
+   book chips lived in the body — two filter systems, two locations.        */
+.a2-bar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 12px; margin: 0 0 14px;
+  border: 1px solid var(--border); border-radius: 15px;
+  background: color-mix(in srgb, var(--bg, #050812) 86%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3); backdrop-filter: blur(16px) saturate(1.3);
+  box-shadow: 0 8px 26px -18px rgba(0, 0, 0, .9);
+}
+.a2-bar.stuck { border-color: rgba(168, 85, 247, .3); }
+
+.a2-sel {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 10px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--border); background: rgba(255, 255, 255, .04);
+  color: #dbe1f2; font: inherit; font-size: 11.5px; font-weight: 650;
+  transition: border-color .2s, background .2s;
+}
+.a2-sel:hover { border-color: rgba(168, 85, 247, .4); background: rgba(168, 85, 247, .08); }
+.a2-sel:focus-visible { outline: 2px solid #a855f7; outline-offset: 2px; }
+
+.a2-jump { display: flex; gap: 3px; margin-left: auto; overflow-x: auto; scrollbar-width: none; }
+.a2-jump::-webkit-scrollbar { display: none }
+.a2-jump button {
+  flex: 0 0 auto; padding: 7px 11px; border: 0; border-radius: 9px; cursor: pointer;
+  background: transparent; color: #8892ad; font-size: 11px; font-weight: 650;
+  white-space: nowrap; transition: color .2s, background .2s;
+}
+.a2-jump button:hover { color: #cdd4e8; background: rgba(255, 255, 255, .05); }
+.a2-jump button.on { color: #e9d9ff; background: rgba(138, 63, 252, .2); }
+
+/* ─── verdict hero ───────────────────────────────────────────────────── */
+.a2-hero {
+  position: relative; overflow: hidden;
+  border: 1px solid var(--border); border-radius: 20px; padding: 22px;
+  margin-bottom: 12px;
+  background:
+    radial-gradient(ellipse 60% 130% at 8% 0%, color-mix(in srgb, var(--a2-tone, #8a3ffc) 20%, transparent), transparent 62%),
+    linear-gradient(140deg, rgba(24, 20, 48, .95), rgba(11, 14, 30, .96));
+}
+.a2-hero::after {
+  content: ''; position: absolute; top: -60%; right: -10%; width: 46%; height: 220%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--a2-tone, #8a3ffc) 16%, transparent), transparent 70%);
+  pointer-events: none;
+}
+.a2-htop { position: relative; z-index: 1; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.a2-htxt { flex: 1; min-width: 190px }
+.a2-verdict {
+  display: inline-flex; align-items: center; gap: 6px; margin-bottom: 7px;
+  padding: 4px 10px; border-radius: 100px;
+  font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--a2-tone, #c9a4ff);
+  border: 1px solid color-mix(in srgb, var(--a2-tone, #8a3ffc) 42%, transparent);
+  background: color-mix(in srgb, var(--a2-tone, #8a3ffc) 14%, transparent);
+}
+.a2-htxt h2 { margin: 0 0 5px; font-size: clamp(18px, 2.4vw, 24px); font-weight: 800; letter-spacing: -.02em; color: #fff; line-height: 1.2 }
+.a2-htxt p { margin: 0; font-size: 12.5px; line-height: 1.6; color: #9aa4c0 }
+.a2-htxt p b { color: #dfe5f5; font-weight: 650 }
+
+/* KPI strip with period-over-period deltas */
+.a2-kpi { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 8px; margin-top: 17px }
+.a2-k {
+  padding: 11px 12px; border-radius: 13px;
+  border: 1px solid var(--border); background: rgba(255, 255, 255, .045);
+  transition: border-color .25s, transform .25s var(--a2-ease);
+}
+.a2-k:hover { border-color: rgba(168, 85, 247, .32); transform: translateY(-2px) }
+.a2-k b { display: block; font-size: 19px; font-weight: 800; color: #fff; line-height: 1; font-variant-numeric: tabular-nums }
+.a2-k span { display: block; margin-top: 5px; font-size: 9.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #8892ad }
+.a2-d { display: inline-flex; align-items: center; gap: 3px; margin-top: 6px; font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums }
+.a2-d.up { color: #2ee3a2 } .a2-d.dn { color: #ff6b81 } .a2-d.flat { color: #7a86a4 }
+
+/* ─── "do this next" — the answer card ───────────────────────────────── */
+.a2-next { border: 1px solid rgba(255, 107, 129, .26); border-radius: 18px; padding: 17px; margin-bottom: 12px; background: linear-gradient(150deg, rgba(52, 20, 32, .5), rgba(12, 14, 30, .72)) }
+.a2-next.good { border-color: rgba(46, 227, 162, .26); background: linear-gradient(150deg, rgba(14, 44, 34, .45), rgba(12, 14, 30, .72)) }
+.a2-nh { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 4px }
+.a2-nh h3 { margin: 0; font-size: 15px; font-weight: 800; color: #fff; letter-spacing: -.01em }
+.a2-nh span { font-size: 10.5px; color: #8892ad }
+.a2-nsub { margin: 0 0 13px; font-size: 12px; line-height: 1.55; color: #9aa4c0 }
+
+.a2-act { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-top: 1px solid rgba(255, 255, 255, .06) }
+.a2-act:first-of-type { border-top: 0 }
+.a2-rank { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; font-size: 10.5px; font-weight: 800; color: #ffb4c0; background: rgba(255, 107, 129, .16) }
+.a2-next.good .a2-rank { color: #8ce8c4; background: rgba(46, 227, 162, .16) }
+.a2-ainfo { flex: 1; min-width: 0 }
+.a2-ainfo b { display: block; font-size: 13px; font-weight: 700; color: #fff; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.a2-ainfo small { display: block; margin-top: 3px; font-size: 10.5px; color: #8892ad }
+.a2-ameter { flex: 0 0 92px; height: 6px; border-radius: 99px; background: rgba(255, 255, 255, .09); overflow: hidden }
+.a2-ameter i { display: block; height: 100%; border-radius: 99px; width: 0; transition: width .9s var(--a2-ease) .15s }
+.a2-apct { flex: 0 0 auto; width: 38px; text-align: right; font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums }
+.a2-ago {
+  flex: 0 0 auto; padding: 7px 12px; border-radius: 9px; cursor: pointer;
+  border: 1px solid rgba(168, 85, 247, .42); background: rgba(138, 63, 252, .16);
+  color: #dcc0ff; font-size: 11px; font-weight: 700; white-space: nowrap;
+  transition: background .2s, transform .2s var(--a2-ease);
+}
+.a2-ago:hover { background: rgba(138, 63, 252, .3); transform: translateX(2px) }
+
+/* ─── generic panel ──────────────────────────────────────────────────── */
+.a2-p { border: 1px solid var(--border); border-radius: 18px; padding: 17px; background: var(--surface, rgba(17, 20, 38, .68)); margin-bottom: 12px }
+.a2-ph { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 3px }
+.a2-ph h3 { margin: 0; font-size: 14.5px; font-weight: 800; color: #fff; letter-spacing: -.01em }
+.a2-ph > span { font-size: 10.5px; color: #8892ad }
+.a2-psub { margin: 0 0 14px; font-size: 11.5px; line-height: 1.55; color: #8892ad }
+.a2-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px }
+.a2-two > .a2-p { margin-bottom: 0 }
+
+/* ─── priority table: one ranked list, filterable + sortable ──────────
+   Replaces four separate drill-down destinations (weak / strong / low-data /
+   breakdown) with a single list the student can actually scan and act on.  */
+.a2-ctl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px }
+.a2-chips { display: flex; gap: 5px; overflow-x: auto; scrollbar-width: none; flex: 1; min-width: 0 }
+.a2-chips::-webkit-scrollbar { display: none }
+.a2-chip {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 11px; border-radius: 100px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent;
+  color: #8892ad; font-size: 11px; font-weight: 700; white-space: nowrap;
+  transition: .18s;
+}
+.a2-chip:hover { color: #cdd4e8; border-color: rgba(168, 85, 247, .34) }
+.a2-chip.on { border-color: #a14cff; background: rgba(138, 63, 252, .2); color: #ecdcff }
+.a2-chip u { text-decoration: none; font-size: 9.5px; padding: 1px 5px; border-radius: 99px; background: rgba(255, 255, 255, .1); font-variant-numeric: tabular-nums }
+
+.a2-tbl { display: block }
+.a2-thead {
+  display: grid; grid-template-columns: minmax(0, 1fr) 62px 68px 58px 74px;
+  gap: 10px; padding: 0 0 8px; border-bottom: 1px solid rgba(255, 255, 255, .08);
+  /* WCAG AA on every shipped theme, including sepia and vivid. */
+  font-size: 9.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #8b96b2;
+}
+.a2-thead button {
+  border: 0; background: none; padding: 0; cursor: pointer; text-align: left;
+  color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit;
+  display: inline-flex; align-items: center; gap: 4px; transition: color .2s;
+}
+.a2-thead button:hover { color: #b8c2db }
+.a2-thead button.on { color: #dcc0ff }
+.a2-thead .n { text-align: right; justify-content: flex-end }
+.a2-thead > *:not(:first-child) { text-align: right }
+
+.a2-tr {
+  display: grid; grid-template-columns: minmax(0, 1fr) 62px 68px 58px 74px;
+  gap: 10px; align-items: center; padding: 11px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, .05);
+  transition: background .18s;
+}
+.a2-tr:hover { background: rgba(168, 85, 247, .05) }
+.a2-tr:last-child { border-bottom: 0 }
+.a2-tn { min-width: 0 }
+.a2-tn b { display: block; font-size: 12.5px; font-weight: 650; color: #eef1fb; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.a2-tmeta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 4px; font-size: 10px; color: #7a86a4 }
+.a2-tag { padding: 1px 6px; border-radius: 5px; font-size: 8.5px; font-weight: 800; letter-spacing: .04em; white-space: nowrap }
+.a2-tag.w { background: rgba(255, 107, 129, .16); color: #ff8b9d }
+.a2-tag.s { background: rgba(46, 227, 162, .16); color: #6fe0b4 }
+.a2-tag.i { background: rgba(255, 255, 255, .07); color: #8b95a8 }
+.a2-tag.n { background: rgba(91, 157, 255, .15); color: #86b6ff }
+.a2-tag.slow { background: rgba(255, 183, 77, .16); color: #ffc470 }
+.a2-num { text-align: right; font-size: 12.5px; font-weight: 750; font-variant-numeric: tabular-nums; color: #cfd6ea }
+.a2-tbar { height: 7px; border-radius: 99px; background: rgba(255, 255, 255, .09); overflow: hidden; min-width: 56px }
+.a2-tbar i { display: block; height: 100%; border-radius: 99px; width: 0; transition: width .8s var(--a2-ease) }
+.a2-trow-go {
+  border: 0; background: rgba(255, 255, 255, .05); color: #b8c2db; cursor: pointer;
+  padding: 6px 9px; border-radius: 8px; font-size: 10.5px; font-weight: 700; white-space: nowrap;
+  transition: background .2s, color .2s;
+}
+.a2-trow-go:hover { background: rgba(138, 63, 252, .26); color: #e6d3ff }
+
+/* ─── charts ─────────────────────────────────────────────────────────── */
+.a2-chart { display: block; width: 100%; height: 168px; overflow: visible }
+.a2-chart .pt { transition: r .18s var(--a2-ease) }
+.a2-chart:hover .pt { r: 3.4 }
+.a2-clab { display: flex; justify-content: space-between; margin-top: 7px; font-size: 9.5px; font-weight: 600; color: #7a86a4 }
+
+.a2-donut { display: flex; align-items: center; gap: 18px; flex-wrap: wrap }
+.a2-dring { position: relative; flex: 0 0 auto; width: 128px; height: 128px; border-radius: 50% }
+.a2-dring::after { content: ''; position: absolute; inset: 18px; border-radius: 50%; background: var(--surface, #11142a) }
+.a2-dmid { position: absolute; inset: 0; display: grid; place-items: center; z-index: 1; text-align: center }
+.a2-dmid b { display: block; font-size: 23px; font-weight: 800; color: #fff; line-height: 1; font-variant-numeric: tabular-nums }
+.a2-dmid span { display: block; margin-top: 3px; font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #8892ad }
+.a2-lg { flex: 1; min-width: 140px; display: grid; gap: 9px }
+.a2-lgi { display: flex; align-items: center; gap: 9px; font-size: 12px; font-weight: 600; color: #9aa4c0 }
+.a2-lgi i { width: 9px; height: 9px; border-radius: 3px; flex: 0 0 auto }
+.a2-lgi b { margin-left: auto; color: #eef1fb; font-weight: 800; font-variant-numeric: tabular-nums }
+.a2-lgi u { text-decoration: none; font-size: 10px; color: #7a86a4; width: 38px; text-align: right; font-variant-numeric: tabular-nums }
+
+/* heatmap */
+.a2-heat { display: grid; grid-template-columns: repeat(15, 1fr); gap: 4px }
+.a2-hc { aspect-ratio: 1; min-height: 15px; border-radius: 4px; background: rgba(255, 255, 255, .045); border: 1px solid rgba(120, 140, 190, .07); transition: transform .18s var(--a2-ease) }
+.a2-hc:hover { transform: scale(1.22); z-index: 2 }
+.a2-hc.l1 { background: #35206d; border-color: transparent }
+.a2-hc.l2 { background: #6233b1; border-color: transparent }
+.a2-hc.l3 { background: #944bdf; border-color: transparent }
+.a2-hc.l4 { background: #cf79ff; border-color: transparent }
+.a2-hleg { display: flex; align-items: center; gap: 5px; justify-content: flex-end; margin-top: 10px; font-size: 9.5px; color: #7a86a4 }
+.a2-hleg i { width: 11px; height: 11px; border-radius: 3px }
+
+/* sessions */
+.a2-sr { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(255, 255, 255, .05) }
+.a2-sr:last-child { border-bottom: 0 }
+.a2-sr b { font-size: 12.5px; font-weight: 650; color: #eef1fb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.a2-sr small { display: block; margin-top: 3px; font-size: 10px; color: #8b96b2 }
+.a2-sr .sc { font-size: 12px; font-weight: 700; color: #c9a4ff; font-variant-numeric: tabular-nums }
+.a2-sr .ac { font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; min-width: 44px }
+
+.a2-note { padding: 13px; border-radius: 12px; background: rgba(255, 255, 255, .028); border: 1px dashed rgba(255, 255, 255, .13); color: #8892ad; font-size: 11.5px; line-height: 1.6 }
+.a2-empty { text-align: center; padding: 34px 18px }
+.a2-empty h3 { margin: 0 0 7px; font-size: 16px; color: #fff }
+.a2-empty p { margin: 0 auto 16px; max-width: 380px; font-size: 12.5px; line-height: 1.6; color: #8892ad }
+
+.a2-more { width: 100%; margin-top: 11px; padding: 10px; border-radius: 10px; cursor: pointer; border: 1px solid var(--border); background: rgba(255, 255, 255, .035); color: #b8c2db; font-size: 11.5px; font-weight: 700; transition: .2s }
+.a2-more:hover { border-color: rgba(168, 85, 247, .4); color: #e6d3ff }
+
+/* ─── responsive ─────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  /* Touch ergonomics: every interactive control gets a comfortable target.
+     Chips, sort headers, jump links and row CTAs are otherwise ~22-26px. */
+  #anx2 button, #anx2 select { min-height: 34px }
+  .a2-chip { padding: 8px 13px }
+  .a2-jump button { padding: 9px 12px }
+  .a2-ago { padding: 9px 14px }
+  .a2-trow-go { padding: 8px 11px }
+
+  .a2-bar { padding: 9px 10px; gap: 7px; border-radius: 13px }
+  .a2-jump { margin-left: 0; width: 100%; order: 3; border-top: 1px solid rgba(255,255,255,.07); padding-top: 7px }
+  .a2-hero { padding: 17px; border-radius: 17px }
+  .a2-kpi { grid-template-columns: repeat(2, 1fr) }
+  /* Table collapses to two rows per record — no horizontal scrolling. */
+  .a2-thead { display: none }
+  .a2-tr { grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px 10px; padding: 12px 0 }
+  .a2-tr .a2-tbar { grid-column: 1 / -1; order: 3 }
+  .a2-tr .a2-num.pace { display: none }
+  .a2-act { flex-wrap: wrap }
+  .a2-ameter { flex: 1 1 100%; order: 4 }
+  .a2-heat { grid-template-columns: repeat(10, 1fr) }
+  .a2-dring { width: 108px; height: 108px }
+  .a2-sr { grid-template-columns: minmax(0, 1fr) auto }
+  .a2-sr .sc { display: none }
+}
+
+/* ─── light theme ────────────────────────────────────────────────────── */
+/* `--surface` is NOT re-declared by the light theme (it stays #0b1122), so
+   any panel that trusts it would render dark-on-light. Set the surfaces
+   explicitly instead of inheriting a token the theme does not maintain. */
+body[data-theme="light"] #anx2 .a2-p,
+body[data-theme="light"] #anx2 .a2-dring::after { background: #fff }
+body[data-theme="light"] #anx2 .a2-p { border-color: rgba(20, 20, 60, .1) }
+body[data-theme="light"] #anx2 .a2-k { background: rgba(20, 20, 60, .035); border-color: rgba(20, 20, 60, .09) }
+body[data-theme="light"] #anx2 .a2-tr { border-bottom-color: rgba(20, 20, 60, .07) }
+body[data-theme="light"] #anx2 .a2-thead { border-bottom-color: rgba(20, 20, 60, .1) }
+body[data-theme="light"] #anx2 .a2-sr,
+body[data-theme="light"] #anx2 .a2-act { border-color: rgba(20, 20, 60, .07) }
+body[data-theme="light"] #anx2 .a2-sel { background: #fff; border-color: rgba(20, 20, 60, .13) }
+
+body[data-theme="light"] #anx2 .a2-bar { background: rgba(255, 255, 255, .9) }
+body[data-theme="light"] #anx2 .a2-hero { background: radial-gradient(ellipse 60% 130% at 8% 0%, color-mix(in srgb, var(--a2-tone, #8a3ffc) 12%, transparent), transparent 62%), linear-gradient(140deg, #fff, #f6f3ff) }
+body[data-theme="light"] #anx2 .a2-htxt h2,
+body[data-theme="light"] #anx2 .a2-k b,
+body[data-theme="light"] #anx2 .a2-ph h3,
+body[data-theme="light"] #anx2 .a2-nh h3,
+body[data-theme="light"] #anx2 .a2-ainfo b,
+body[data-theme="light"] #anx2 .a2-tn b,
+body[data-theme="light"] #anx2 .a2-dmid b,
+body[data-theme="light"] #anx2 .a2-lgi b,
+body[data-theme="light"] #anx2 .a2-sr b,
+body[data-theme="light"] #anx2 .a2-empty h3 { color: #17213b }
+body[data-theme="light"] #anx2 .a2-num,
+body[data-theme="light"] #anx2 .a2-sel { color: #3b4358 }
+
+/* Ring label inherits colour (see ring() in part4.js). */
+#anx2 .a2-htop > svg { color: #fff }
+body[data-theme="light"] #anx2 .a2-htop > svg { color: #17213b }
+
+/* Light theme needs solid fills — the dark translucent washes vanish. */
+body[data-theme="light"] #anx2 .a2-ago {
+  background: #8a3ffc; border-color: #8a3ffc; color: #fff;
+}
+body[data-theme="light"] #anx2 .a2-ago:hover { background: #7431e0 }
+body[data-theme="light"] #anx2 .a2-chip { color: #55607d; border-color: rgba(20,20,60,.14) }
+body[data-theme="light"] #anx2 .a2-chip.on { background: #8a3ffc; border-color: #8a3ffc; color: #fff }
+body[data-theme="light"] #anx2 .a2-chip.on u { background: rgba(255,255,255,.26) }
+body[data-theme="light"] #anx2 .a2-chip u { background: rgba(20,20,60,.09) }
+body[data-theme="light"] #anx2 .a2-jump button { color: #55607d }
+body[data-theme="light"] #anx2 .a2-jump button.on { background: rgba(138,63,252,.14); color: #6d28d9 }
+body[data-theme="light"] #anx2 .a2-thead { color: #55607d }
+body[data-theme="light"] #anx2 .a2-thead button.on { color: #6d28d9 }
+body[data-theme="light"] #anx2 .a2-tmeta,
+body[data-theme="light"] #anx2 .a2-ainfo small,
+body[data-theme="light"] #anx2 .a2-sr small,
+body[data-theme="light"] #anx2 .a2-psub,
+body[data-theme="light"] #anx2 .a2-nsub,
+body[data-theme="light"] #anx2 .a2-htxt p,
+body[data-theme="light"] #anx2 .a2-lgi { color: #5b6478 }
+body[data-theme="light"] #anx2 .a2-k span,
+body[data-theme="light"] #anx2 .a2-dmid span,
+body[data-theme="light"] #anx2 .a2-ph > span { color: #5b6478 }
+body[data-theme="light"] #anx2 .a2-tag.w { background: rgba(214,40,70,.12); color: #c31f43 }
+body[data-theme="light"] #anx2 .a2-tag.s { background: rgba(11,145,96,.12); color: #0b7a52 }
+body[data-theme="light"] #anx2 .a2-tag.n { background: rgba(37,99,235,.12); color: #1d4ed8 }
+body[data-theme="light"] #anx2 .a2-tag.i { background: rgba(20,20,60,.07); color: #5b6478 }
+body[data-theme="light"] #anx2 .a2-tag.slow { background: rgba(180,83,9,.13); color: #b45309 }
+body[data-theme="light"] #anx2 .a2-tbar,
+body[data-theme="light"] #anx2 .a2-ameter { background: rgba(20,20,60,.09) }
+body[data-theme="light"] #anx2 .a2-hc { background: rgba(20,20,60,.055); border-color: rgba(20,20,60,.08) }
+/* The dark-theme heat ramp is near-invisible on white; use a light ramp. */
+body[data-theme="light"] #anx2 .a2-hc.l1 { background: #ddd0f7 }
+body[data-theme="light"] #anx2 .a2-hc.l2 { background: #b794f0 }
+body[data-theme="light"] #anx2 .a2-hc.l3 { background: #8a3ffc }
+body[data-theme="light"] #anx2 .a2-hc.l4 { background: #5b16c4 }
+body[data-theme="light"] #anx2 .a2-d.up { color: #0b7a52 }
+body[data-theme="light"] #anx2 .a2-d.dn { color: #c31f43 }
+body[data-theme="light"] #anx2 .a2-d.flat { color: #6b7488 }
+body[data-theme="light"] #anx2 .a2-more,
+body[data-theme="light"] #anx2 .a2-trow-go { background: #fff; color: #3b4358 }
+body[data-theme="light"] #anx2 .a2-rank { background: rgba(214,40,70,.12); color: #c31f43 }
+body[data-theme="light"] #anx2 .a2-next.good .a2-rank { background: rgba(11,145,96,.12); color: #0b7a52 }
+body[data-theme="light"] #anx2 .a2-note { background: rgba(20,20,60,.03); border-color: rgba(20,20,60,.14); color: #5b6478 }
+body[data-theme="light"] #anx2 .a2-tr:hover { background: rgba(138,63,252,.05) }
+body[data-theme="light"] #anx2 .a2-dring::after { background: #fff }
+body[data-theme="light"] #anx2 .a2-next { background: linear-gradient(150deg, #fff5f6, #fff) }
+body[data-theme="light"] #anx2 .a2-next.good { background: linear-gradient(150deg, #f0fdf7, #fff) }

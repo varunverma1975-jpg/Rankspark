@@ -1,0 +1,108 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   RANKSPARK — PART 8 · PACK DOWNLOAD UI
+   Additive only: decorates the existing .book-cover-card, never restyles it.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── action bar on each card ──────────────────────────────────────────── */
+.rsp-dl {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px; border-top: 1px solid rgba(255,255,255,.07);
+  background: rgba(0,0,0,.22);
+}
+.rsp-dl-b {
+  flex: 1; min-width: 0; padding: 7px 10px; border: 0; border-radius: 8px; cursor: pointer;
+  font: inherit; font-size: 10.5px; font-weight: 650; color: #fff;
+  background: linear-gradient(105deg, #7c2ff5, #a855f7);
+  box-shadow: 0 6px 14px -8px rgba(120,40,220,.95);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: filter .2s, transform .2s cubic-bezier(.22,1,.36,1);
+}
+.rsp-dl-b:hover { filter: brightness(1.09); transform: translateY(-1px); }
+.rsp-dl-b:active { transform: none; }
+.rsp-dl-b.upd {
+  background: linear-gradient(105deg, #ff9f43, #ff7a45);
+  box-shadow: 0 6px 14px -8px rgba(255,140,60,.9);
+}
+.rsp-dl-s {
+  flex: 1; font-size: 10px; font-weight: 650; letter-spacing: .04em;
+  text-transform: uppercase; white-space: nowrap;
+}
+.rsp-dl-s.ok    { color: #6fe0b4; }
+.rsp-dl-s.ready { color: #86b6ff; }
+.rsp-dl-x {
+  flex: none; width: 24px; height: 24px; border: 0; border-radius: 7px; cursor: pointer;
+  display: grid; place-items: center; font-size: 15px; line-height: 1;
+  background: rgba(255,255,255,.07); color: #8892ad;
+  transition: background .2s, color .2s;
+}
+.rsp-dl-x:hover { background: rgba(255,83,104,.18); color: #ff8b9d; }
+.rsp-dl-b:focus-visible, .rsp-dl-x:focus-visible { outline: 2px solid #a855f7; outline-offset: 2px; }
+
+/* ─── download overlay ─────────────────────────────────────────────────── */
+.rsp-prog {
+  position: absolute; inset: 0; z-index: 5;
+  display: grid; place-items: center; align-content: center; gap: 7px;
+  padding: 14px; text-align: center; border-radius: inherit;
+  background: rgba(8,10,22,.92);
+  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  animation: rspFade .22s ease both;
+}
+@keyframes rspFade { from { opacity: 0 } to { opacity: 1 } }
+.rsp-prog-ring { position: relative; width: 52px; height: 52px; }
+.rsp-prog-ring svg { width: 52px; height: 52px; transform: rotate(-90deg); }
+.rsp-prog-ring circle { fill: none; stroke-width: 3.5; }
+.rsp-prog-ring .t { stroke: rgba(255,255,255,.1); }
+.rsp-prog-ring .f {
+  stroke: url(#rspGrad); stroke: #a855f7; stroke-linecap: round;
+  transition: stroke-dashoffset .3s cubic-bezier(.22,1,.36,1);
+}
+.rsp-prog-ring b {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; font-weight: 600; color: #fff; font-variant-numeric: tabular-nums;
+}
+.rsp-prog-t { font-size: 10.5px; color: #cfd6ea; font-variant-numeric: tabular-nums; }
+.rsp-prog-e { font-size: 9.5px; color: #7a86a4; font-variant-numeric: tabular-nums; }
+.rsp-prog-x {
+  margin-top: 3px; padding: 5px 12px; border: 1px solid rgba(255,255,255,.16);
+  border-radius: 8px; cursor: pointer; background: rgba(255,255,255,.05);
+  color: #b8c2db; font: inherit; font-size: 10px; font-weight: 600;
+}
+.rsp-prog-x:hover { border-color: rgba(255,255,255,.3); color: #fff; }
+
+/* ─── storage summary ──────────────────────────────────────────────────── */
+.rsp-store { margin: 8px 0 14px; }
+.rsp-store-b {
+  height: 5px; border-radius: 99px; overflow: hidden;
+  background: rgba(255,255,255,.08);
+}
+.rsp-store-b i {
+  display: block; height: 100%; border-radius: 99px;
+  background: linear-gradient(90deg, #34d7ff, #a855f7);
+  transition: width .7s cubic-bezier(.22,1,.36,1);
+}
+.rsp-store-t {
+  display: flex; justify-content: space-between; gap: 10px; margin-top: 6px;
+  font-size: 10px; color: #7a86a4; font-variant-numeric: tabular-nums;
+}
+
+/* The card needs a positioning context for the overlay; it already has one
+   in the app's CSS, but assert it so the overlay can never escape. */
+.book-cover-card { position: relative; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rsp-prog { animation: none; }
+  .rsp-prog-ring .f, .rsp-store-b i { transition: none; }
+}
+
+/* ─── light theme ──────────────────────────────────────────────────────── */
+body[data-theme="light"] .rsp-dl {
+  background: rgba(20,20,60,.035); border-top-color: rgba(20,20,60,.08);
+}
+body[data-theme="light"] .rsp-dl-x { background: rgba(20,20,60,.06); color: #5b6478; }
+body[data-theme="light"] .rsp-store-b { background: rgba(20,20,60,.09); }
+body[data-theme="light"] .rsp-store-t { color: #5b6478; }
+body[data-theme="light"] .rsp-prog { background: rgba(255,255,255,.95); }
+body[data-theme="light"] .rsp-prog-ring b { color: #17213b; }
+body[data-theme="light"] .rsp-prog-t { color: #3b4358; }
+body[data-theme="light"] .rsp-prog-x { background: #fff; color: #3b4358; border-color: rgba(20,20,60,.14); }

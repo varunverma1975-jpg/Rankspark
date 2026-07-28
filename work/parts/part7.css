@@ -1,0 +1,130 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   RANKSPARK — PART 7 · CLOUD BRIDGE CHROME
+   Maintenance takeover (Section 12) + announcement banners (Section 9).
+   Styled in the app's own language: ink base, violet→magenta accent, Sora.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── maintenance takeover ─────────────────────────────────────────────── */
+body.rs-maint-on { overflow: hidden; }
+body.rs-maint-on .app-shell,
+body.rs-maint-on .bottom-nav { filter: blur(7px) saturate(.5); pointer-events: none; user-select: none; }
+
+#rs-maint {
+  position: fixed; inset: 0; z-index: 2147483000;
+  display: grid; place-items: center; padding: 24px;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 0%, rgba(109, 92, 255, .22), transparent 62%),
+    radial-gradient(ellipse 60% 50% at 85% 100%, rgba(180, 92, 255, .16), transparent 60%),
+    rgba(6, 6, 11, .96);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  animation: rsMaintIn .45s cubic-bezier(.22, 1, .36, 1) both;
+}
+@keyframes rsMaintIn { from { opacity: 0 } to { opacity: 1 } }
+
+.rs-maint-card {
+  position: relative; width: min(520px, 100%); text-align: center;
+  padding: 40px 32px 32px; border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  background: linear-gradient(165deg, rgba(24, 22, 48, .95), rgba(10, 10, 24, .96));
+  box-shadow: 0 40px 90px -30px rgba(0, 0, 0, .9);
+  animation: rsMaintUp .5s cubic-bezier(.22, 1, .36, 1) both .05s;
+}
+@keyframes rsMaintUp { from { opacity: 0; transform: translateY(16px) scale(.98) } to { opacity: 1; transform: none } }
+
+.rs-maint-badge {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 13px 5px 11px; margin-bottom: 20px; border-radius: 100px;
+  border: 1px solid rgba(255, 194, 75, .34); background: rgba(255, 194, 75, .11);
+  color: #ffc24b; font-size: 10.5px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+}
+.rs-maint-badge::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%; background: #ffc24b;
+  animation: rsPulse 2s cubic-bezier(.65, 0, .35, 1) infinite;
+}
+@keyframes rsPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(255, 194, 75, .6) }
+  70%  { box-shadow: 0 0 0 8px rgba(255, 194, 75, 0) }
+  100% { box-shadow: 0 0 0 0 rgba(255, 194, 75, 0) }
+}
+
+.rs-maint-card h1 {
+  margin: 0 0 12px; font-size: clamp(21px, 3.6vw, 28px); font-weight: 700;
+  letter-spacing: -.022em; line-height: 1.2; color: #fff;
+}
+.rs-maint-card p {
+  margin: 0 auto; max-width: 400px;
+  font-size: 14px; line-height: 1.65; color: #a3adc9;
+}
+.rs-maint-count {
+  margin-top: 22px; padding: 12px 16px; border-radius: 13px;
+  border: 1px solid rgba(255, 255, 255, .1); background: rgba(255, 255, 255, .04);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 15px; font-weight: 500; color: #22d3ee; font-variant-numeric: tabular-nums;
+}
+.rs-maint-retry {
+  margin-top: 22px; padding: 12px 24px; border: 0; border-radius: 11px; cursor: pointer;
+  color: #fff; font: inherit; font-size: 13px; font-weight: 650;
+  background: linear-gradient(105deg, #6d5cff, #b45cff);
+  box-shadow: 0 14px 30px -14px rgba(140, 80, 255, .9);
+  transition: transform .24s cubic-bezier(.22, 1, .36, 1), filter .24s;
+}
+.rs-maint-retry:hover { transform: translateY(-2px); filter: brightness(1.09) }
+.rs-maint-retry:active { transform: translateY(0) scale(.985) }
+.rs-maint-retry:focus-visible { outline: 2px solid #b45cff; outline-offset: 3px }
+
+/* ─── announcement banners ─────────────────────────────────────────────── */
+#rs-msg-wrap {
+  position: fixed; left: 0; right: 0; top: 0; z-index: 2147482000;
+  display: grid; gap: 1px; pointer-events: none;
+}
+.rs-msg {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px; pointer-events: auto; overflow: hidden;
+  font-size: 12.5px; line-height: 1.45; color: #f2f4ff;
+  background: linear-gradient(100deg, rgba(109, 92, 255, .95), rgba(180, 92, 255, .92));
+  animation: rsMsgIn .4s cubic-bezier(.22, 1, .36, 1) both;
+  transition: height .24s cubic-bezier(.22, 1, .36, 1), opacity .2s, padding .24s;
+}
+@keyframes rsMsgIn { from { transform: translateY(-100%) } to { transform: none } }
+.rs-msg.out { height: 0 !important; opacity: 0; padding-top: 0; padding-bottom: 0 }
+.rs-msg[data-k="warning"] { background: linear-gradient(100deg, rgba(255, 122, 69, .95), rgba(255, 194, 75, .92)); color: #1a1002 }
+.rs-msg[data-k="success"] { background: linear-gradient(100deg, rgba(34, 211, 238, .95), rgba(46, 227, 162, .92)); color: #03211c }
+.rs-msg[data-k="promo"]   { background: linear-gradient(100deg, #b45cff, #ff7a45) }
+.rs-msg-t { flex: 1; min-width: 0 }
+.rs-msg-cta {
+  flex: none; padding: 5px 12px; border-radius: 8px; text-decoration: none;
+  background: rgba(255, 255, 255, .22); color: inherit;
+  font-size: 11.5px; font-weight: 700; white-space: nowrap;
+  transition: background .2s;
+}
+.rs-msg-cta:hover { background: rgba(255, 255, 255, .34) }
+.rs-msg-x {
+  flex: none; width: 24px; height: 24px; border: 0; border-radius: 7px; cursor: pointer;
+  display: grid; place-items: center;
+  background: rgba(255, 255, 255, .15); color: inherit; font-size: 16px; line-height: 1;
+  transition: background .2s;
+}
+.rs-msg-x:hover { background: rgba(255, 255, 255, .3) }
+
+/* Banners are position:fixed at the top; push the app down so they never
+   cover the topbar. */
+body:has(#rs-msg-wrap) .content { padding-top: 44px }
+
+@media (prefers-reduced-motion: reduce) {
+  #rs-maint, .rs-maint-card, .rs-msg { animation: none !important }
+  .rs-maint-badge::before { animation: none !important }
+}
+@media (max-width: 560px) {
+  .rs-maint-card { padding: 30px 20px 24px; border-radius: 20px }
+  .rs-msg { font-size: 11.5px; padding: 9px 11px; gap: 9px }
+}
+
+body[data-theme="light"] #rs-maint {
+  background: radial-gradient(ellipse 70% 55% at 50% 0%, rgba(109, 92, 255, .14), transparent 62%), rgba(238, 242, 251, .97);
+}
+body[data-theme="light"] .rs-maint-card {
+  background: linear-gradient(165deg, #fff, #f6f4ff); border-color: rgba(20, 20, 60, .1);
+}
+body[data-theme="light"] .rs-maint-card h1 { color: #10172a }
+body[data-theme="light"] .rs-maint-card p { color: #5b6478 }

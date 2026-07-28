@@ -1,0 +1,22 @@
+{
+  "name": "rankspark",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "RankSpark \u2014 competitive-exam practice PWA. The app itself is the static ranksparks.html; this manifest exists so Vercel installs the dependencies the /api routes need.",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  },
+  "scripts": {
+    "build": "python3 work/build.py",
+    "test:premium": "python3 work/test.py",
+    "test:auth": "python3 work/tests/auth_probe.py",
+    "test:mount": "python3 work/tests/mount_probe.py",
+    "test:verify": "node work/tests/verify_route.mjs",
+    "test:grant": "node work/tests/grant_route.mjs",
+    "test:hf": "python3 work/tests/hf_probe.py"
+  }
+}

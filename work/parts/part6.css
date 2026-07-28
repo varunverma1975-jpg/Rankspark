@@ -1,0 +1,184 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   RANKSPARK — PART 6 · SETTINGS CORRECTIONS
+   ───────────────────────────────────────────────────────────────────────────
+   Fixes verified by measurement, not assumption:
+   1. Interface scale was fake  — Small and Medium both computed to 13px, and
+      559 hardcoded px rules ignored the setting entirely.
+   2. Reading width was fake    — identical width at all three values.
+   3. UI weights were too heavy — 750/800 on 10–12px text reads as chunky.
+   4. Headline did not match the supplied reference (needed heavier, tighter).
+   5. No avatar upload, and Personal Details was five plain text boxes.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── 1. INTERFACE SCALE (now real) ──────────────────────────────────────
+   The app hardcodes px on ~559 rules, so changing the root font-size can
+   never work. `zoom` on the scroll container scales every one of them,
+   including borders and spacing, and keeps layout arithmetic intact.
+   Verified: rowTitle height 15.2 / 16.9 / 19.4px at 0.9 / 1.0 / 1.15
+   with no horizontal overflow at any step.                                */
+body[data-ui-scale="xs"]  .content { zoom: 0.9; }
+body[data-ui-scale="sm"]  .content { zoom: 0.95; }
+body[data-ui-scale="md"]  .content { zoom: 1; }
+body[data-ui-scale="lg"]  .content { zoom: 1.1; }
+body[data-ui-scale="xl"]  .content { zoom: 1.22; }
+
+/* The fixed bottom nav sits outside .content, so scale it to match. */
+@media (max-width: 900px) {
+  body[data-ui-scale="xs"] .bottom-nav { zoom: 0.9; }
+  body[data-ui-scale="sm"] .bottom-nav { zoom: 0.95; }
+  body[data-ui-scale="lg"] .bottom-nav { zoom: 1.1; }
+  body[data-ui-scale="xl"] .bottom-nav { zoom: 1.22; }
+}
+
+/* ─── 2. READING WIDTH (now real) ────────────────────────────────────────
+   #anx2 / #stx / #page-pricing each declare their own max-width, which beat
+   a rule on the ancestor. Target the elements themselves.                  */
+body[data-measure="narrow"] #anx2,
+body[data-measure="narrow"] #stx,
+body[data-measure="narrow"] #page-pricing > *,
+body[data-measure="narrow"] .content main { max-width: 780px; margin-inline: auto; }
+
+body[data-measure="wide"] #anx2,
+body[data-measure="wide"] #stx { max-width: 1480px; }
+body[data-measure="wide"] .content { max-width: none; }
+
+/* ─── 3. LIGHTER UI TYPE ─────────────────────────────────────────────────
+   750/800 on 10–12px text renders as a solid block. Dropping to 600–650
+   keeps hierarchy while letting the letterforms breathe.                   */
+#stx .st-sh b      { font-weight: 640; letter-spacing: -.005em; }
+#stx .st-rt b      { font-weight: 560; }
+#stx .st-rt small  { font-weight: 400; }
+#stx .st-pill      { font-weight: 650; letter-spacing: .085em; }
+#stx .st-seg button{ font-weight: 580; }
+#stx .st-chip      { font-weight: 580; }
+#stx .st-val       { font-weight: 550; }
+#stx .st-key b     { font-weight: 600; }
+#stx .st-fp-nm     { font-weight: 620; }
+#stx .st-th-n      { font-weight: 560; }
+#stx .st-reset     { font-weight: 560; }
+#stx .st-store-l b { font-weight: 620; }
+
+/* Same restraint across the other rebuilt surfaces. */
+#anx2 .a2-htxt h2  { font-weight: 680; }
+#anx2 .a2-tn b     { font-weight: 560; }
+#anx2 .a2-ph h3    { font-weight: 640; }
+#anx2 .a2-k b      { font-weight: 680; }
+#anx2 .a2-thead    { font-weight: 650; }
+#anx2 .a2-num      { font-weight: 600; }
+#anx2 .a2-tag      { font-weight: 650; }
+#anx2 .a2-nh h3    { font-weight: 660; }
+#anx2 .a2-ainfo b  { font-weight: 580; }
+
+/* ─── 4. EDITORIAL HEADLINE — matched to the reference ───────────────────
+   The reference is a high-contrast didone set very tight (≈1.02) at ~900,
+   with italic indigo emphasis and a light geometric-sans subtitle.         */
+/* `body[data-fontpair] h1` (0,1,1) outranks a bare `.rs-headline` (0,1,0),
+   so the pairing's --lh-heading was overriding the reference leading.
+   Qualifying with the element + attribute wins cleanly. */
+body h1.rs-headline,
+body h2.rs-headline,
+.rs-headline {
+  font-family: "Playfair Display", "Didot", Georgia, serif;
+  font-weight: 900;
+  font-size: clamp(32px, 6.2vw, 62px);
+  line-height: 1.04;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+body h1.rs-headline em, body h2.rs-headline em,
+.rs-headline em,
+.rs-headline .accent {
+  font-style: italic;
+  font-weight: 900;
+  letter-spacing: -0.015em;
+}
+body p.rs-subtitle,
+.rs-subtitle {
+  margin-top: 26px;
+  font-weight: 350;
+  font-size: 17.5px;
+  line-height: 1.62;
+  letter-spacing: .002em;
+  max-width: 640px;
+}
+@media (max-width: 560px) {
+  body h1.rs-headline, .rs-headline { font-size: clamp(28px, 8.4vw, 40px); line-height: 1.06; }
+  body p.rs-subtitle, .rs-subtitle { margin-top: 20px; font-size: 15.5px; }
+}
+
+/* ─── 5. AVATAR ──────────────────────────────────────────────────────── */
+.st-ava-row { display: flex; align-items: center; gap: 14px; padding: 15px 16px; border-top: 1px solid rgba(255,255,255,.045); }
+.st-ava {
+  position: relative; width: 62px; height: 62px; flex: none; border-radius: 50%;
+  display: grid; place-items: center; overflow: hidden; cursor: pointer;
+  background: linear-gradient(145deg, #8a3ffc, #5b16c4);
+  color: #fff; font-size: 24px; font-weight: 650; letter-spacing: -.02em;
+  box-shadow: 0 6px 18px -8px rgba(120,40,220,.9);
+  transition: transform .22s var(--st-ease, cubic-bezier(.22,1,.36,1));
+}
+.st-ava:hover { transform: scale(1.04) }
+.st-ava img { width: 100%; height: 100%; object-fit: cover; display: block }
+.st-ava-cam {
+  position: absolute; inset: auto 0 0 0; height: 40%;
+  display: grid; place-items: center; opacity: 0;
+  background: linear-gradient(transparent, rgba(0,0,0,.7));
+  transition: opacity .22s;
+}
+.st-ava:hover .st-ava-cam, .st-ava:focus-visible .st-ava-cam { opacity: 1 }
+.st-ava-cam .ui-icon { width: 15px; height: 15px; color: #fff }
+.st-ava-txt { flex: 1; min-width: 0 }
+.st-ava-txt b { display: block; font-size: 13px; font-weight: 600; color: var(--text) }
+.st-ava-txt small { display: block; margin-top: 3px; font-size: 10.5px; color: #8892ad; line-height: 1.5 }
+.st-ava-acts { display: flex; gap: 7px; margin-top: 9px; flex-wrap: wrap }
+.st-ava-btn {
+  padding: 7px 12px; border-radius: 9px; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--border); background: rgba(255,255,255,.05);
+  color: #c3cbe4; font: inherit; font-size: 11px; font-weight: 580;
+  transition: border-color .2s, color .2s;
+}
+.st-ava-btn:hover { border-color: rgba(168,85,247,.5); color: #e6d3ff }
+.st-ava-btn.danger:hover { border-color: rgba(255,83,104,.5); color: #ff8b9d }
+
+/* ─── 6. RICHER SHEET FIELDS ─────────────────────────────────────────── */
+.rs-fgrid { display: grid; gap: 13px }
+.rs-f { display: grid; gap: 6px }
+.rs-f > label { font-size: 11px; font-weight: 600; color: #9aa4c0; letter-spacing: .01em }
+.rs-f input, .rs-f select {
+  width: 100%; padding: 11px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: rgba(255,255,255,.04);
+  color: var(--text); font: inherit; font-size: 13px; outline: none;
+  transition: border-color .2s, background .2s;
+}
+.rs-f input:focus, .rs-f select:focus { border-color: #a855f7; background: rgba(168,85,247,.07) }
+.rs-f input::placeholder { color: #6d7a9a }
+.rs-f small { font-size: 10px; color: #7a86a4; line-height: 1.5 }
+.rs-f.bad input { border-color: rgba(255,83,104,.65) }
+.rs-f.bad small { color: #ff8b9d }
+.rs-f.ok input  { border-color: rgba(46,227,162,.5) }
+
+/* phone: dial-code prefix + number */
+.rs-phone { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: stretch }
+.rs-dial {
+  display: inline-flex; align-items: center; gap: 6px; padding: 0 11px;
+  border-radius: 10px; border: 1px solid var(--border);
+  background: rgba(255,255,255,.05); color: #cfd6ea;
+  font-size: 13px; font-weight: 580; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.rs-dial i { font-style: normal; font-size: 15px; line-height: 1 }
+.rs-count { font-size: 10px; color: #7a86a4; font-variant-numeric: tabular-nums }
+
+body[data-theme="light"] .rs-f input,
+body[data-theme="light"] .rs-f select,
+body[data-theme="light"] .rs-dial,
+body[data-theme="light"] .st-ava-btn { background: #fff; border-color: rgba(20,20,60,.13) }
+body[data-theme="light"] .rs-f > label { color: #4b5563 }
+body[data-theme="light"] .rs-f small,
+body[data-theme="light"] .rs-count { color: #6b7280 }
+body[data-theme="light"] .st-ava-txt small { color: #5b6478 }
+
+/* ─── 7. MOBILE BREATHING ROOM ───────────────────────────────────────── */
+@media (max-width: 900px) {
+  /* Clear the fixed bottom nav so the last section is never obscured. */
+  #stx { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+  #anx2 { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+}

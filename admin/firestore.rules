@@ -1,0 +1,163 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RANKSPARK — Firestore security rules
+//
+// Threat model this is written against:
+//   • A student opens devtools and calls Firestore directly with their own
+//     credentials. They must not be able to publish books, edit pricing,
+//     grant themselves a plan, read another student's data, or take the app
+//     down via maintenance mode.
+//   • A revoked admin keeps a stale browser tab open. Removing /admins/{uid}
+//     must cut their write access on the very next request.
+//
+// Principle: the admin dashboard's client-side allowlist check is a UX
+// affordance only. THESE RULES are the actual enforcement.
+// ═══════════════════════════════════════════════════════════════════════════
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── helpers ──────────────────────────────────────────────────────────
+    function signedIn() {
+      return request.auth != null;
+    }
+    // A single get() per request, billed as one read. Admin status lives in
+    // Firestore rather than a custom claim so it can be revoked instantly
+    // without waiting for the user's ID token to refresh (up to 1 hour).
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+    // Reject writes that try to smuggle in fields the client must never set.
+    function noPrivilegedFields() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['plan', 'status', 'stripeCustomerId', 'subscription',
+                 'supportNote', 'sessionEpoch', 'role']);
+    }
+
+    // ── /admins ──────────────────────────────────────────────────────────
+    // Readable by admins so the dashboard can list them. Writes go through a
+    // Cloud Function only: if an admin could write here directly, a single
+    // compromised admin account could silently mint more admins and there
+    // would be no server-side record of it.
+    match /admins/{uid} {
+      allow read:  if isAdmin();
+      allow write: if false;
+    }
+
+    // ── /config ──────────────────────────────────────────────────────────
+    // World-readable on purpose: unauthenticated clients need maintenance
+    // mode and feature flags before sign-in. Never put secrets here.
+    match /config/{doc} {
+      allow read:  if true;
+      allow write: if isAdmin();
+
+      match /history/{entry} {
+        allow read:  if isAdmin();
+        allow write: if false;   // append-only, written by Cloud Function
+      }
+    }
+
+    // ── /books ───────────────────────────────────────────────────────────
+    // Students read only what is published; drafts stay invisible.
+    match /books/{bookId} {
+      allow read:  if resource.data.active == true || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ── /users ───────────────────────────────────────────────────────────
+    // A user reads and writes their own document, but cannot grant themselves
+    // a plan or lift a suspension — those fields are Function/admin territory.
+    match /users/{uid} {
+      allow read:   if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid);
+      allow update: if isAdmin() || (isOwner(uid) && noPrivilegedFields());
+      allow delete: if isAdmin();
+    }
+
+    // ── /rankedAttempts ──────────────────────────────────────────────────
+    // Create-only from clients. Immutable once written, so a score cannot be
+    // edited after the fact; the leaderboard is derived server-side.
+    match /rankedAttempts/{id} {
+      allow read:   if isAdmin();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ── /sessions (presence) ─────────────────────────────────────────────
+    match /sessions/{sid} {
+      allow read:  if isAdmin();
+      allow write: if signedIn() && request.resource.data.uid == request.auth.uid;
+    }
+
+    // ── /notifications & /messages ───────────────────────────────────────
+    // Clients read active items to render them; only admins author.
+    match /notifications/{id} {
+      allow read:  if signedIn();
+      allow write: if isAdmin();
+    }
+    match /messages/{id} {
+      allow read:  if true;      // banners must render for guests too
+      allow write: if isAdmin();
+    }
+
+    // ── /content ─────────────────────────────────────────────────────────
+    // Published content is public (it is the privacy policy and T&Cs);
+    // drafts are admin-only so copy can be staged.
+    match /content/{slug} {
+      allow read:  if resource.data.status == 'published' || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ── /payments ────────────────────────────────────────────────────────
+    // Written exclusively server-side — the Razorpay verify route
+    // (/api/razorpay/verify, via the Admin SDK, which bypasses these rules)
+    // and the Stripe webhook Function. `write: false` means no client path can
+    // fabricate a payment record or back-date one, which is what makes
+    // /payments/{payment_id} usable as the replay guard for entitlements.
+    match /payments/{id} {
+      allow read:  if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow write: if false;
+    }
+
+    // ── /emailChanges ────────────────────────────────────────────────────
+    // A user may request a change; only a Function may mark it verified.
+    match /emailChanges/{id} {
+      allow read:   if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.status == 'pending';
+      allow update, delete: if false;
+    }
+
+    // ── /analyticsRollups ────────────────────────────────────────────────
+    match /analyticsRollups/{date} {
+      allow read:  if isAdmin();
+      allow write: if false;     // scheduled Function only
+    }
+
+    // ── /auditLog ────────────────────────────────────────────────────────
+    // Append-only and never editable, including by admins. An audit trail an
+    // admin can rewrite is not an audit trail.
+    match /auditLog/{id} {
+      allow read:   if isAdmin();
+      allow create: if isAdmin() && request.resource.data.adminUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /emailTemplates/{id} {
+      allow read:  if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ── default deny ─────────────────────────────────────────────────────
+    // Anything not matched above is denied. New collections must be added
+    // here deliberately rather than inheriting access by accident.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

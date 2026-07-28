@@ -1,0 +1,375 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   RANKSPARK — SETTINGS REDESIGN + TYPOGRAPHY SYSTEM  (part 5)
+   ───────────────────────────────────────────────────────────────────────────
+   • Font-pairing system (--font-heading / --font-body) with live preview
+   • Editorial headline + subtitle style
+   • Full settings surface: search, sections, inline controls, reset
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── TYPOGRAPHY TOKENS ───────────────────────────────────────────────────
+   Defaults mirror the app's existing Inter stack so nothing shifts until the
+   user opts into a pairing. Each pairing overrides only these two families
+   plus its metric companions.                                              */
+:root {
+  --font-heading: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-body:    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  /* Sane defaults per the brief. */
+  --lh-heading: 1.15;   /* 1.1–1.2  */
+  --lh-body:    1.6;
+  --fs-body:    16px;   /* 16–18px  */
+
+  --ink-headline: #0b1020;      /* dark navy/black */
+  --ink-emphasis: #5b4fe8;      /* indigo accent   */
+  --ink-subtitle: #6b7280;      /* medium gray     */
+}
+
+/* Body copy adopts the chosen body face + reading defaults. Scoped to a
+   data-attribute so the untouched default never changes app rendering. */
+body[data-fontpair] {
+  font-family: var(--font-body);
+  line-height: var(--lh-body);
+}
+/* The editorial headline owns its own leading (see part6) and must not
+   inherit the active pairing's --lh-heading. :not() keeps this selector from
+   matching it while leaving every other heading on the pairing metrics. */
+body[data-fontpair] h1:not(.rs-headline),
+body[data-fontpair] h2:not(.rs-headline),
+body[data-fontpair] h3, body[data-fontpair] h4,
+body[data-fontpair] .page-heading h1:not(.rs-headline) {
+  font-family: var(--font-heading);
+  line-height: var(--lh-heading);
+}
+/* Headline keeps the pairing's FAMILY when one is active, but never its leading. */
+body[data-fontpair] .rs-headline { font-family: var(--font-heading); }
+/* Numeric/monospace UI must never inherit a display face. */
+body[data-fontpair] .a2-num, body[data-fontpair] .rsp-price-num,
+body[data-fontpair] code, body[data-fontpair] kbd, body[data-fontpair] pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ─── EDITORIAL HEADLINE + SUBTITLE ───────────────────────────────────────
+   Bold serif headline, tight leading, with <em> spans rendered italic indigo
+   for emphasis. Subtitle is regular-weight sans, medium gray, measure-capped. */
+.rs-headline {
+  margin: 0;
+  font-family: "Playfair Display", Georgia, "Times New Roman", serif;
+  font-weight: 700;
+  font-size: clamp(30px, 5vw, 56px);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--ink-headline);
+  text-wrap: balance;
+}
+.rs-headline em,
+.rs-headline .accent {
+  font-style: italic;
+  font-weight: 700;
+  color: var(--ink-emphasis);
+}
+.rs-subtitle {
+  margin: 28px 0 0;                 /* 24–32px gap */
+  max-width: 660px;                 /* 600–700px measure */
+  font-family: "Source Sans 3", Inter, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--ink-subtitle);
+}
+/* The light theme sets `body[data-theme="light"] h1 { color:#17213b !important }`.
+   An !important declaration can only be beaten by another !important, so the
+   editorial colours are forced here. This is the one place in this file where
+   !important is warranted — it is answering an existing !important, not
+   pre-empting one. */
+body[data-theme="light"] h1.rs-headline,
+body[data-theme="light"] h2.rs-headline,
+body[data-theme="light"] .rs-headline { color: var(--ink-headline) !important; }
+body[data-theme="light"] .rs-subtitle,
+body[data-theme="light"] #page-profile .subheading.rs-subtitle { color: var(--ink-subtitle) !important; }
+body[data-theme="light"] .rs-headline em,
+body[data-theme="light"] .rs-headline .accent { color: var(--ink-emphasis) !important; }
+
+/* On dark themes the navy headline would vanish — lift to near-white while
+   the indigo emphasis stays the brand accent. */
+body:not([data-theme="light"]) h1.rs-headline,
+body:not([data-theme="light"]) .rs-headline { color: #f4f6ff; }
+body:not([data-theme="light"]) .rs-headline em,
+body:not([data-theme="light"]) .rs-headline .accent { color: #a99bff; }
+body:not([data-theme="light"]) .rs-subtitle { color: #99a2b8; }
+@media (max-width: 560px) {
+  .rs-subtitle { margin-top: 22px; font-size: 16.5px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SETTINGS SURFACE
+   ═══════════════════════════════════════════════════════════════════════ */
+#stx { display: block; max-width: 880px; margin: 0 auto; padding-bottom: 44px; --st-ease: cubic-bezier(.22,1,.36,1); }
+#stx * { box-sizing: border-box; min-width: 0; }
+
+/* Legacy settings groups are replaced wholesale (every row is rebuilt).
+   Hidden from JS as well, because source order can beat this rule. */
+#page-profile .premium-settings-group { display: none !important; }
+
+#stx > .st-r { opacity: 0; animation: stIn .42s var(--st-ease) both; }
+#stx > .st-r:nth-child(1){animation-delay:0ms}
+#stx > .st-r:nth-child(2){animation-delay:40ms}
+#stx > .st-r:nth-child(3){animation-delay:80ms}
+#stx > .st-r:nth-child(4){animation-delay:120ms}
+#stx > .st-r:nth-child(n+5){animation-delay:150ms}
+@keyframes stIn { from { opacity:0; transform: translateY(10px) } to { opacity:1; transform:none } }
+@media (prefers-reduced-motion: reduce) {
+  #stx > .st-r { animation: none !important; opacity: 1 !important; transform: none !important }
+  #stx *, body[data-motion="calm"] * { transition: none !important }
+}
+
+/* ─── search + jump ─────────────────────────────────────────────────── */
+.st-bar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; gap: 9px; align-items: center; flex-wrap: wrap;
+  padding: 10px 12px; margin-bottom: 14px;
+  border: 1px solid var(--border); border-radius: 15px;
+  background: color-mix(in srgb, var(--bg, #050812) 88%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3); backdrop-filter: blur(16px) saturate(1.3);
+}
+.st-search { position: relative; flex: 1; min-width: 190px; display: flex; align-items: center }
+.st-search .ui-icon { position: absolute; left: 11px; width: 15px; height: 15px; color: #8892ad; pointer-events: none }
+.st-search input {
+  width: 100%; padding: 10px 34px 10px 34px; border-radius: 10px;
+  border: 1px solid var(--border); background: rgba(255,255,255,.04);
+  color: var(--text); font: inherit; font-size: 12.5px; outline: none;
+  transition: border-color .2s, background .2s;
+}
+.st-search input::placeholder { color: #7a86a4 }
+.st-search input:focus { border-color: #a855f7; background: rgba(168,85,247,.07) }
+.st-clear {
+  position: absolute; right: 8px; width: 20px; height: 20px; border: 0; border-radius: 6px;
+  display: none; place-items: center; cursor: pointer;
+  background: rgba(255,255,255,.09); color: #b8c2db; font-size: 13px; line-height: 1;
+}
+.st-search.has .st-clear { display: grid }
+.st-reset {
+  padding: 9px 13px; border-radius: 10px; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--border); background: rgba(255,255,255,.04);
+  color: #b8c2db; font: inherit; font-size: 11.5px; font-weight: 650;
+  transition: border-color .2s, color .2s;
+}
+.st-reset:hover { border-color: rgba(255,83,104,.45); color: #ff8b9d }
+
+/* ─── section ───────────────────────────────────────────────────────── */
+.st-sec {
+  border: 1px solid var(--border); border-radius: 18px; overflow: hidden;
+  background: var(--surface, rgba(17,20,38,.68)); margin-bottom: 12px;
+}
+.st-sh {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.st-sh-i {
+  width: 28px; height: 28px; flex: none; border-radius: 9px; display: grid; place-items: center;
+  background: rgba(168,85,247,.15); color: #c9a4ff;
+}
+.st-sh-i .ui-icon { width: 15px; height: 15px }
+.st-sh b { font-size: 13px; font-weight: 750; letter-spacing: .01em; color: var(--text) }
+.st-sh small { display: block; margin-top: 2px; font-size: 10.5px; color: #8892ad; font-weight: 400 }
+
+/* ─── row ───────────────────────────────────────────────────────────── */
+.st-row {
+  display: flex; align-items: center; gap: 13px;
+  padding: 13px 16px; border-top: 1px solid rgba(255,255,255,.045);
+  transition: background .18s;
+}
+.st-sh + .st-row { border-top: 0 }
+.st-row:hover { background: rgba(168,85,247,.045) }
+.st-row.act { cursor: pointer }
+.st-row.danger .st-ri { background: rgba(255,83,104,.14); color: #ff8b9d }
+.st-row.danger .st-rt b { color: #ff8b9d }
+.st-ri {
+  width: 32px; height: 32px; flex: none; border-radius: 10px; display: grid; place-items: center;
+  background: rgba(255,255,255,.05); color: #b0bad4;
+}
+.st-ri .ui-icon { width: 16px; height: 16px }
+.st-rt { flex: 1; min-width: 0 }
+.st-rt b { display: block; font-size: 12.5px; font-weight: 650; color: var(--text); line-height: 1.35 }
+.st-rt small { display: block; margin-top: 3px; font-size: 10.5px; line-height: 1.5; color: #8892ad }
+.st-rr { flex: none; display: flex; align-items: center; gap: 9px }
+.st-val { font-size: 11.5px; font-weight: 650; color: #a4aec7; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.st-chev { width: 15px; height: 15px; color: #6d7a9a; flex: none }
+
+/* toggle */
+.st-tg {
+  position: relative; width: 42px; height: 24px; flex: none; border: 0; border-radius: 99px;
+  cursor: pointer; background: rgba(255,255,255,.13); padding: 0;
+  transition: background .26s var(--st-ease);
+}
+.st-tg::after {
+  content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+  border-radius: 50%; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,.36);
+  transition: transform .26s var(--st-ease);
+}
+.st-tg[aria-checked="true"] { background: linear-gradient(100deg,#8a3ffc,#a855f7) }
+.st-tg[aria-checked="true"]::after { transform: translateX(18px) }
+.st-tg:focus-visible { outline: 2px solid #a855f7; outline-offset: 2px }
+
+/* segmented */
+.st-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: rgba(255,255,255,.06); border: 1px solid var(--border) }
+.st-seg button {
+  border: 0; background: none; padding: 6px 11px; border-radius: 8px; cursor: pointer;
+  color: #8892ad; font: inherit; font-size: 11px; font-weight: 650; white-space: nowrap;
+  transition: color .2s, background .2s;
+}
+.st-seg button:hover { color: #cdd4e8 }
+.st-seg button.on { color: #fff; background: linear-gradient(100deg,#8a3ffc,#a855f7) }
+.st-seg button:focus-visible { outline: 2px solid #a855f7; outline-offset: 1px }
+
+/* select */
+.st-sel {
+  padding: 8px 11px; border-radius: 9px; cursor: pointer;
+  border: 1px solid var(--border); background: rgba(255,255,255,.04);
+  color: var(--text); font: inherit; font-size: 11.5px; font-weight: 600;
+}
+.st-sel:focus-visible { outline: 2px solid #a855f7; outline-offset: 2px }
+
+/* ─── theme swatches ────────────────────────────────────────────────── */
+.st-themes { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px,1fr)); gap: 9px; padding: 4px 16px 16px }
+.st-th {
+  position: relative; border: 1.5px solid var(--border); border-radius: 13px; overflow: hidden;
+  cursor: pointer; padding: 0; background: none; text-align: left;
+  transition: border-color .22s, transform .22s var(--st-ease);
+}
+.st-th:hover { transform: translateY(-2px); border-color: rgba(168,85,247,.45) }
+.st-th.on { border-color: #a855f7; box-shadow: 0 0 0 3px rgba(168,85,247,.16) }
+.st-th:focus-visible { outline: 2px solid #a855f7; outline-offset: 2px }
+.st-th-p { height: 46px; display: flex; align-items: flex-end; gap: 3px; padding: 7px }
+.st-th-p i { flex: 1; border-radius: 3px }
+.st-th-n { display: block; padding: 7px 9px 8px; font-size: 11px; font-weight: 650; color: var(--text); border-top: 1px solid rgba(255,255,255,.07) }
+.st-th-tick {
+  position: absolute; top: 6px; right: 6px; width: 17px; height: 17px; border-radius: 50%;
+  display: none; place-items: center; background: #a855f7; color: #fff;
+}
+.st-th.on .st-th-tick { display: grid }
+.st-th-tick .ui-icon { width: 10px; height: 10px }
+
+/* ─── FONT PAIRING ──────────────────────────────────────────────────── */
+.st-fonts { display: grid; gap: 10px; padding: 4px 16px 16px }
+.st-fp {
+  position: relative; display: block; width: 100%; text-align: left; cursor: pointer;
+  border: 1.5px solid var(--border); border-radius: 15px; padding: 0; overflow: hidden;
+  background: none; transition: border-color .22s, transform .22s var(--st-ease);
+}
+.st-fp:hover { transform: translateY(-2px); border-color: rgba(168,85,247,.42) }
+.st-fp.on { border-color: #a855f7; box-shadow: 0 0 0 3px rgba(168,85,247,.15) }
+.st-fp:focus-visible { outline: 2px solid #a855f7; outline-offset: 2px }
+
+.st-fp-hd {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  padding: 11px 13px; border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.st-fp-nm { font-size: 12px; font-weight: 700; color: var(--text) }
+.st-fp-tick { margin-left: auto; width: 18px; height: 18px; border-radius: 50%; display: none; place-items: center; background: #a855f7; color: #fff }
+.st-fp.on .st-fp-tick { display: grid }
+.st-fp-tick .ui-icon { width: 11px; height: 11px }
+
+/* pill role tags */
+.st-pill {
+  display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 100px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 8.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  white-space: nowrap; line-height: 1.4;
+}
+.st-pill.heading { background: rgba(91,79,232,.16); color: #a99bff; border: 1px solid rgba(91,79,232,.34) }
+.st-pill.body    { background: rgba(52,215,255,.13); color: #7fd8f2; border: 1px solid rgba(52,215,255,.3) }
+.st-pill.serif   { background: rgba(255,183,77,.14); color: #ffc470; border: 1px solid rgba(255,183,77,.3) }
+.st-pill.sans    { background: rgba(46,227,162,.13); color: #6fe0b4; border: 1px solid rgba(46,227,162,.3) }
+.st-pill.display { background: rgba(255,107,129,.14); color: #ff9caa; border: 1px solid rgba(255,107,129,.3) }
+
+/* live preview card — light gray background per the brief.
+   The card lives inside a <button>, so its children are spans; they must be
+   forced to block flow or they render inline and overlap. */
+.st-fp-pv {
+  display: block;
+  padding: 16px 17px 17px;
+  background: #f3f4f6;                     /* light gray card */
+  border-radius: 0 0 13px 13px;
+}
+.st-fp-pv .pv-h,
+.st-fp-pv .pv-b { display: block }
+.st-fp-pv .pv-h {
+  margin: 0 0 9px;
+  font-size: clamp(19px, 2.4vw, 25px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -.015em;
+  color: #0b1020;
+  text-wrap: balance;
+}
+.st-fp-pv .pv-h em { font-style: italic; color: #5b4fe8 }
+.st-fp-pv .pv-b {
+  margin: 0; font-size: 13.5px; line-height: 1.6; color: #4b5563; max-width: 62ch;
+}
+.st-fp-pv .pv-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px }
+/* Tags inside the light card need light-card contrast. */
+.st-fp-pv .st-pill.heading { background: #e8e6fd; color: #4c3fd6; border-color: #cdc7fa }
+.st-fp-pv .st-pill.body    { background: #dff2fb; color: #0e6f92; border-color: #b9e4f5 }
+.st-fp-pv .st-pill.serif   { background: #fdf0d9; color: #9a6512; border-color: #f7dfb4 }
+.st-fp-pv .st-pill.sans    { background: #d9f7ec; color: #0b7a52; border-color: #b3edd8 }
+.st-fp-pv .st-pill.display { background: #fde3e7; color: #c31f43; border-color: #f8c6ce }
+
+/* Font-loading state — avoids a flash of fallback metrics. */
+.st-fp[data-loading="1"] .st-fp-pv { opacity: .55 }
+.st-fp-pv { transition: opacity .25s }
+
+/* ─── keyboard shortcut list ────────────────────────────────────────── */
+.st-keys { display: grid; gap: 6px; padding: 4px 16px 16px }
+.st-key { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 11.5px; color: #a4aec7 }
+.st-key b {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; font-weight: 700;
+  padding: 3px 8px; border-radius: 6px; color: #dfe5f5;
+  background: rgba(255,255,255,.07); border: 1px solid var(--border);
+}
+
+/* ─── storage meter ─────────────────────────────────────────────────── */
+.st-store { padding: 4px 16px 16px }
+.st-store-b { height: 7px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; margin: 9px 0 8px }
+.st-store-b i { display: block; height: 100%; border-radius: 99px; width: 0; background: linear-gradient(90deg,#34d7ff,#a855f7); transition: width .8s var(--st-ease) }
+.st-store-l { display: flex; justify-content: space-between; font-size: 10.5px; color: #8892ad }
+.st-store-l b { color: var(--text); font-variant-numeric: tabular-nums }
+
+.st-empty { padding: 30px 18px; text-align: center; color: #8892ad; font-size: 12.5px }
+.st-note { margin: 0; padding: 11px 16px 15px; font-size: 10.5px; line-height: 1.6; color: #7a86a4 }
+
+/* ─── responsive ────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  #stx button, #stx select, #stx input { min-height: 36px }
+  .st-bar { padding: 9px 10px }
+  .st-reset { width: 100%; order: 3 }
+  .st-row { padding: 12px 13px; gap: 11px; flex-wrap: wrap }
+  .st-rr { width: 100%; justify-content: flex-end; margin-top: -4px }
+  .st-row:has(.st-tg) { flex-wrap: nowrap }
+  .st-row:has(.st-tg) .st-rr { width: auto; margin-top: 0 }
+  .st-val { max-width: 50vw }
+  .st-themes, .st-fonts, .st-keys, .st-store { padding-left: 13px; padding-right: 13px }
+  .st-seg { width: 100%; justify-content: stretch }
+  .st-seg button { flex: 1; text-align: center; padding: 8px 6px }
+}
+
+/* ─── light + alt themes ────────────────────────────────────────────── */
+body[data-theme="light"] #stx .st-bar { background: rgba(255,255,255,.92) }
+body[data-theme="light"] #stx .st-sec { background: #fff; border-color: rgba(20,20,60,.1) }
+body[data-theme="light"] #stx .st-search input,
+body[data-theme="light"] #stx .st-sel,
+body[data-theme="light"] #stx .st-reset { background: #fff; border-color: rgba(20,20,60,.13) }
+body[data-theme="light"] #stx .st-rt small,
+body[data-theme="light"] #stx .st-sh small,
+body[data-theme="light"] #stx .st-key,
+body[data-theme="light"] #stx .st-store-l,
+body[data-theme="light"] #stx .st-note { color: #5b6478 }
+body[data-theme="light"] #stx .st-val { color: #4b5563 }
+body[data-theme="light"] #stx .st-ri { background: rgba(20,20,60,.05); color: #55607d }
+body[data-theme="light"] #stx .st-tg { background: rgba(20,20,60,.16) }
+body[data-theme="light"] #stx .st-seg { background: rgba(20,20,60,.05) }
+body[data-theme="light"] #stx .st-seg button { color: #55607d }
+body[data-theme="light"] #stx .st-seg button.on { color: #fff }
+body[data-theme="light"] #stx .st-key b { background: #f3f4f6; color: #1f2937 }
+body[data-theme="light"] #stx .st-row { border-top-color: rgba(20,20,60,.07) }
+body[data-theme="light"] #stx .st-sh { border-bottom-color: rgba(20,20,60,.08) }
+body[data-theme="light"] #stx .st-store-b { background: rgba(20,20,60,.09) }
