@@ -2552,6 +2552,33 @@ function showDenied(email) {
   };
 }
 
+/* checkAdmin() previously had no failure path: if the Firestore read threw
+   (rules not published yet, offline, misconfigured project, etc.) the
+   promise rejected inside onAuthStateChanged with nothing awaiting it, so
+   the boot screen sat on "Verifying admin access…" forever with no visible
+   error. This surfaces the real cause and offers a retry. */
+function showBootError(err, user) {
+  $('#boot-sub').textContent = 'Could not verify admin access.';
+  $('#boot-body').innerHTML = `
+    <div class="note bad">${ico('warn', 14)}<span>
+      <b>${esc(err?.code || 'Error')}.</b> ${esc(err?.message || String(err))}</span></div>
+    <button class="btn btn-p btn-full" id="be-retry" style="margin-top:14px">Retry</button>
+    <button class="btn btn-g btn-full" id="be-out" style="margin-top:8px">Sign out</button>`;
+  $('#be-retry').onclick = async () => {
+    $('#boot-sub').textContent = 'Verifying admin access…';
+    $('#boot-body').innerHTML = '';
+    try {
+      const ok = await checkAdmin(user.uid);
+      if (!ok) { showDenied(user.email); return; }
+      enterApp(user);
+    } catch (er) { showBootError(er, user); }
+  };
+  $('#be-out').onclick = async () => {
+    const { signOut } = state.fb.mods.auth;
+    await signOut(state.fb.auth); location.reload();
+  };
+}
+
 function enterApp(user) {
   state.user = user;
   /* `hidden` is overridden by .auth{display:grid}, so the boot screen would
@@ -2651,9 +2678,11 @@ window.addEventListener('hashchange', () => _page.dispatchEvent(new CustomEvent(
   onAuthStateChanged(state.fb.auth, async user => {
     if (!user) { showLogin(); return; }
     $('#boot-sub').textContent = 'Verifying admin access…';
-    const ok = await checkAdmin(user.uid);
-    if (!ok) { showDenied(user.email); return; }
-    enterApp(user);
+    try {
+      const ok = await checkAdmin(user.uid);
+      if (!ok) { showDenied(user.email); return; }
+      enterApp(user);
+    } catch (er) { showBootError(er, user); }
   });
 })();
 
