@@ -656,6 +656,38 @@ window.__rsRemount = function(){
   catch(_){ try{ next.srcdoc = __rsAppHTML; }catch(__){} }
 };
 
+/* One-tap alternative to the RankSparkPacks.setSource() console/bookmarklet
+   step: visiting ?setpacks=<repoId> (optionally driver:repoId, default hf)
+   configures the pack source automatically once the app frame is ready.
+   Bookmarklets are unreliable on mobile Chrome when launched from the full
+   Bookmarks manager page, so this avoids that path entirely. */
+function applyPacksParam(){
+  let raw;
+  try{ raw = new URLSearchParams(location.search).get('setpacks'); }catch(_){ raw = null; }
+  if(!raw) return;
+  let driver = 'hf', repoId = raw;
+  if(raw.indexOf(':') !== -1){
+    const i = raw.indexOf(':');
+    driver = raw.slice(0, i) || 'hf';
+    repoId = raw.slice(i + 1);
+  }
+  let tries = 0;
+  const tryApply = () => {
+    const fw = document.getElementById('appFrame');
+    const api = fw && fw.contentWindow && fw.contentWindow.RankSparkPacks;
+    if(api && typeof api.setSource === 'function'){
+      try{
+        api.setSource({ driver, repoId });
+        toast('Question packs source set');
+      }catch(_){ toast('Could not set packs source'); }
+      try{ history.replaceState(null, '', location.pathname + location.hash); }catch(_){}
+      return;
+    }
+    if(++tries < 100) setTimeout(tryApply, 100);
+  };
+  tryApply();
+}
+
 async function preloadApp(){
   if(appReady) return;
   appReady = true;
@@ -664,6 +696,7 @@ async function preloadApp(){
     const fromCache = !!html;
     if(!html) html = await decodeNative();
     mount(html);
+    applyPacksParam();
     /* Warm the cache after paint so it never delays the handoff. */
     if(!fromCache){
       if('requestIdleCallback' in window) requestIdleCallback(()=>cachePut(html),{timeout:3000});
