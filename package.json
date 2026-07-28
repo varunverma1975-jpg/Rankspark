@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "RankSpark \u2014 competitive-exam practice PWA. The app itself is the static ranksparks.html; this manifest exists so Vercel installs the dependencies the /api routes need.",
+  "description": "RankSpark — competitive-exam practice PWA. The app itself is the static ranksparks.html; this manifest exists so Vercel installs the dependencies the /api routes need.",
   "engines": {
     "node": ">=18"
   },
@@ -11,7 +11,8 @@
     "firebase-admin": "^12.7.0"
   },
   "scripts": {
-    "build": "python3 work/build.py",
+    "build": "echo 'Static site — nothing to build. Run npm run rebuild:static locally to regenerate ranksparks.html from work/parts.'",
+    "rebuild:static": "python3 work/build.py",
     "test:premium": "python3 work/test.py",
     "test:auth": "python3 work/tests/auth_probe.py",
     "test:mount": "python3 work/tests/mount_probe.py",
