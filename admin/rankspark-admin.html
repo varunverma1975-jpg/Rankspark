@@ -2466,6 +2466,7 @@ const NAV = [
   ]],
   ['Catalog', [
     ['books', 'Question packs', 'book'],
+    ['extract', 'Extraction rules', 'file'],
     ['content', 'Site content', 'file']
   ]],
   ['Revenue', [
@@ -2686,7 +2687,589 @@ window.addEventListener('hashchange', () => _page.dispatchEvent(new CustomEvent(
   });
 })();
 
+/* ── Extraction rules screen ───────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   RANKSPARK ADMIN — EXTRACTION RULES
+   ───────────────────────────────────────────────────────────────────────────
+   Build, DRY-RUN and publish the per-book extraction spec that ships inside
+   the pack manifest on Hugging Face.
+
+   WHY DRY-RUN IS THE POINT OF THIS SCREEN
+   The manifest is read by every user's app. A wrong rule silently produces a
+   book full of blank questions, and you would only find out from support
+   messages. So the flow is deliberately: pick a real ZIP -> run the rule
+   against it IN THIS BROWSER -> see the first parsed questions -> only then
+   copy the manifest out. Publishing without a green dry-run is possible but
+   the UI never encourages it.
+
+   NOTHING HERE TOUCHES FIRESTORE. The rules travel with the pack manifest,
+   which is the file you already upload beside the packs. No new collection,
+   no rules change, no writes to users/{uid}.
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+
+  var TARGETS = [
+    ['question_code',       'Question code / ID',      true],
+    ['correct_answer',      'Correct answer',          true],
+    ['chapter_title',       'Chapter title',           false],
+    ['subtopic_name',       'Subtopic / topic',        false],
+    ['exercise',            'Exercise',                false],
+    ['question_type',       'Question type',           false],
+    ['question_image_path', 'Question image path',     false],
+    ['solution_image_path', 'Solution image path',     false],
+    ['full_solution',       'Solution text',           false],
+    ['subject',             'Subject',                 false],
+    ['year',                'Year',                    false],
+    ['exam_name',           'Exam name',               false]
+  ];
+
+  var K_DRAFT = 'rsadmin-extract-draft';
+  var zipEntries = null;      // Map<path, JSZipEntry>
+  var zipName = '';
+  var jsonKeys = [];          // field names discovered in the chosen file
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function $(s, r) { return (r || document).querySelector(s); }
+  function $$(s, r) { return [].slice.call((r || document).querySelectorAll(s)); }
+
+  function loadDraft() {
+    try { return JSON.parse(localStorage.getItem(K_DRAFT) || '{}'); } catch (e) { return {}; }
+  }
+  function saveDraft(d) {
+    try { localStorage.setItem(K_DRAFT, JSON.stringify(d)); } catch (e) {}
+  }
+
+  async function ensureJSZip() {
+    if (window.JSZip) return true;
+    var urls = [
+      'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'
+    ];
+    for (var i = 0; i < urls.length; i++) {
+      try {
+        await new Promise(function (res, rej) {
+          var s = document.createElement('script');
+          s.src = urls[i]; s.onload = res; s.onerror = rej;
+          document.head.appendChild(s);
+        });
+        if (window.JSZip) return true;
+      } catch (e) {}
+    }
+    return false;
+  }
+
+  /* ── the same sanitiser + mapper the APP uses, kept in sync by shape ──
+     Deliberately a copy rather than an import: the admin page must be able to
+     validate a rule without loading the 2.6 MB app. The dry-run therefore
+     tells you what the app WILL do, using identical logic. */
+  var ALIAS = {
+    question_code: ['question_code', 'questioncode', 'code', 'id', 'qid', 'q_id', 'question_id', 'qno'],
+    chapter_title: ['chapter_title', 'chaptertitle', 'chapter', 'chapter_name', 'ch', 'unit'],
+    chapter_number: ['chapter_number', 'chapternumber', 'chapter_no', 'ch_no'],
+    subtopic_name: ['subtopic_name', 'subtopic', 'topic', 'sub_topic', 'section'],
+    exercise: ['exercise', 'ex', 'exercise_name'],
+    question_type: ['question_type', 'questiontype', 'type', 'question_format', 'format'],
+    correct_answer: ['correct_answer', 'correct_option', 'correctanswer', 'answer', 'ans', 'key', 'correct'],
+    full_solution: ['full_solution', 'full_solution_english', 'full_solution_text', 'solution', 'explanation'],
+    question_image_path: ['question_image_path', 'png_path', 'question_png_path', 'image', 'img',
+                          'filename', 'file', 'question_image', 'image_path'],
+    solution_image_path: ['solution_image_path', 'solution_png_path', 'answer_solution_png_path',
+                          'solution_image', 'sol_img', 'answer_image'],
+    subject: ['subject', 'subject_name', 'stream'],
+    year: ['year', 'exam_year'],
+    exam_name: ['exam_name', 'exam', 'exam_source']
+  };
+
+  function pick(rec, names) {
+    for (var i = 0; i < names.length; i++) {
+      var n = names[i];
+      if (rec[n] !== undefined && rec[n] !== null && String(rec[n]).trim() !== '') return rec[n];
+      var keys = Object.keys(rec);
+      for (var j = 0; j < keys.length; j++) {
+        if (keys[j].toLowerCase() === String(n).toLowerCase()) {
+          var v = rec[keys[j]];
+          if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+        }
+      }
+    }
+    return null;
+  }
+
+  function parseCSV(text, delim) {
+    var lines = String(text).split(/\r?\n/).filter(function (l) { return l.trim(); });
+    if (!lines.length) return [];
+    function cut(line) {
+      var out = [], cur = '', q = false;
+      for (var i = 0; i < line.length; i++) {
+        var ch = line[i];
+        if (ch === '"') q = !q;
+        else if (ch === delim && !q) { out.push(cur); cur = ''; }
+        else cur += ch;
+      }
+      out.push(cur); return out;
+    }
+    var heads = cut(lines[0]).map(function (h) { return h.replace(/"/g, '').trim().toLowerCase(); });
+    return lines.slice(1).map(function (l) {
+      var f = cut(l), row = {};
+      heads.forEach(function (h, i) { row[h] = (f[i] || '').replace(/^"|"$/g, '').trim(); });
+      return row;
+    });
+  }
+
+  function mapRecord(r, spec) {
+    var out = {}, m = spec.map || {};
+    Object.keys(ALIAS).forEach(function (t) {
+      var names = (m[t] && m[t].length) ? m[t] : ALIAS[t];
+      var v = pick(r, names);
+      if (v != null) out[t] = v;
+    });
+    Object.keys(spec.defaults || {}).forEach(function (k) {
+      if (out[k] == null || out[k] === '') out[k] = spec.defaults[k];
+    });
+    out.question_code = String(out.question_code == null ? '' : out.question_code).trim();
+    if (out.correct_answer != null) {
+      var key = String(out.correct_answer).trim();
+      out.correct_answer = (spec.answerMap && spec.answerMap[key] != null) ? spec.answerMap[key] : key;
+    }
+    var qp = out.question_image_path ? String(out.question_image_path).replace(/\\/g, '/') : null;
+    if (qp && spec.imageBase && qp.indexOf(spec.imageBase) !== 0) {
+      qp = String(spec.imageBase).replace(/\/+$/, '') + '/' + qp.replace(/^\/+/, '');
+    }
+    out.question_image_path = qp;
+    var sp = out.solution_image_path ? String(out.solution_image_path).replace(/\\/g, '/') : null;
+    if (!sp && qp && spec.solutionFrom) sp = qp.split(spec.solutionFrom.replace).join(spec.solutionFrom.with);
+    if (sp && spec.imageBase && sp.indexOf(spec.imageBase) !== 0) {
+      sp = String(spec.imageBase).replace(/\/+$/, '') + '/' + sp.replace(/^\/+/, '');
+    }
+    out.solution_image_path = sp;
+    if (!out.chapter_title) out.chapter_title = 'Unmapped Chapter';
+    if (!out.question_type) out.question_type = 'MCQ-4';
+    return out;
+  }
+
+  function specFromForm() {
+    var map = {};
+    TARGETS.forEach(function (t) {
+      var v = ($('#xr-map-' + t[0]) || {}).value || '';
+      v = v.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      if (v.length) map[t[0]] = v;
+    });
+    var answerMap = {};
+    var amRaw = ($('#xr-answermap') || {}).value || '';
+    amRaw.split(',').forEach(function (pair) {
+      var kv = pair.split(/[:=]/);
+      if (kv.length === 2 && kv[0].trim()) answerMap[kv[0].trim()] = kv[1].trim();
+    });
+    var defaults = {};
+    var dRaw = ($('#xr-defaults') || {}).value || '';
+    dRaw.split(',').forEach(function (pair) {
+      var kv = pair.split(/[:=]/);
+      if (kv.length === 2 && kv[0].trim()) defaults[kv[0].trim()] = kv[1].trim();
+    });
+    var solFrom = null;
+    var sf = ($('#xr-solfrom') || {}).value || '';
+    var sw = ($('#xr-solwith') || {}).value || '';
+    if (sf) solFrom = { replace: sf, with: sw };
+
+    var spec = {
+      recordsFrom: ($('#xr-recordsfrom') || {}).value || '',
+      recordsPath: ($('#xr-recordspath') || {}).value || '',
+      format: ($('#xr-format') || {}).value || 'json',
+      keyedObject: !!($('#xr-keyed') || {}).checked,
+      map: map,
+      answerMap: answerMap,
+      defaults: defaults,
+      imageBase: ($('#xr-imagebase') || {}).value || ''
+    };
+    if (solFrom) spec.solutionFrom = solFrom;
+    Object.keys(spec).forEach(function (k) {
+      if (spec[k] === '' || (spec[k] && typeof spec[k] === 'object' && !Array.isArray(spec[k]) && !Object.keys(spec[k]).length)) {
+        if (k !== 'map') delete spec[k];
+      }
+    });
+    return spec;
+  }
+
+  async function readEntryText(entry) {
+    if (!entry) return null;
+    return entry.async ? entry.async('text') : null;
+  }
+
+  function findEntry(path) {
+    if (!zipEntries || !path) return null;
+    var want = String(path).toLowerCase().replace(/^\.?\//, '');
+    var exact = null, suffix = null;
+    zipEntries.forEach(function (v, k) {
+      var kk = k.toLowerCase();
+      if (kk === want) exact = v;
+      else if (!suffix && kk.endsWith('/' + want)) suffix = v;
+    });
+    return exact || suffix;
+  }
+
+  async function loadZip(file) {
+    var ok = await ensureJSZip();
+    if (!ok) return { error: 'Could not load the ZIP reader (offline?).' };
+    var zip = await window.JSZip.loadAsync(file);
+    zipEntries = new Map();
+    Object.keys(zip.files).forEach(function (n) {
+      if (!zip.files[n].dir) zipEntries.set(n.replace(/\\/g, '/').replace(/^\.\//, ''), zip.files[n]);
+    });
+    zipName = file.name;
+    return { count: zipEntries.size };
+  }
+
+  function candidateFiles() {
+    if (!zipEntries) return [];
+    var out = [];
+    zipEntries.forEach(function (v, k) {
+      var n = k.toLowerCase();
+      if (n.endsWith('.json') || n.endsWith('.csv')) out.push(k);
+    });
+    out.sort(function (a, b) { return a.split('/').length - b.split('/').length || a.localeCompare(b); });
+    return out;
+  }
+
+  async function inspectFile(path) {
+    var e = findEntry(path);
+    if (!e) return { error: 'Not found in the ZIP.' };
+    var txt = await readEntryText(e);
+    if (txt == null) return { error: 'Could not read the file.' };
+    var isCsv = /\.csv$/i.test(path);
+    var raw;
+    if (isCsv) raw = parseCSV(txt, ',');
+    else {
+      try { raw = JSON.parse(txt); } catch (err) { return { error: 'Not valid JSON: ' + err.message }; }
+    }
+    var arr = raw, note = '';
+    var nestedKey = '';
+    if (raw && !Array.isArray(raw)) {
+      var guesses = ['questions', 'items', 'records', 'data'];
+      for (var i = 0; i < guesses.length; i++) {
+        if (Array.isArray(raw[guesses[i]])) { arr = raw[guesses[i]]; nestedKey = guesses[i]; break; }
+      }
+      if (!Array.isArray(arr)) {
+        var ks = Object.keys(raw);
+        if (ks.length && raw[ks[0]] && typeof raw[ks[0]] === 'object') {
+          arr = ks.map(function (k) { return raw[k]; });
+          note = 'keyed object';
+        }
+      }
+    }
+    if (!Array.isArray(arr) || !arr.length) return { error: 'No record array found in this file.' };
+    var keys = {};
+    arr.slice(0, 40).forEach(function (r) {
+      if (r && typeof r === 'object') Object.keys(r).forEach(function (k) { keys[k] = 1; });
+    });
+    jsonKeys = Object.keys(keys);
+    return { count: arr.length, keys: jsonKeys, nestedKey: nestedKey, note: note,
+             isCsv: isCsv, sample: arr.slice(0, 2) };
+  }
+
+  function autoSuggest() {
+    if (!jsonKeys.length) return;
+    TARGETS.forEach(function (t) {
+      var el = $('#xr-map-' + t[0]);
+      if (!el || el.value.trim()) return;
+      var aliases = ALIAS[t[0]] || [];
+      for (var i = 0; i < aliases.length; i++) {
+        for (var j = 0; j < jsonKeys.length; j++) {
+          if (jsonKeys[j].toLowerCase() === aliases[i].toLowerCase()) { el.value = jsonKeys[j]; return; }
+        }
+      }
+    });
+  }
+
+  async function dryRun() {
+    var out = $('#xr-result');
+    if (!zipEntries) { out.innerHTML = warn('Choose a sample ZIP first.'); return; }
+    var spec = specFromForm();
+    if (!spec.recordsFrom) { out.innerHTML = warn('Set "Records file" (the JSON/CSV inside the ZIP).'); return; }
+
+    var e = findEntry(spec.recordsFrom);
+    if (!e) { out.innerHTML = warn('"' + esc(spec.recordsFrom) + '" is not in this ZIP.'); return; }
+    var txt = await readEntryText(e);
+    var raw;
+    if (spec.format === 'csv') raw = parseCSV(txt, ',');
+    else {
+      try { raw = JSON.parse(txt); } catch (err) { out.innerHTML = warn('Invalid JSON: ' + esc(err.message)); return; }
+    }
+    if (spec.recordsPath && raw && !Array.isArray(raw)) raw = raw[spec.recordsPath];
+    if (raw && !Array.isArray(raw)) {
+      if (spec.keyedObject) {
+        raw = Object.keys(raw).map(function (k) {
+          var o = Object.assign({}, raw[k]);
+          if (o.question_code == null) o.question_code = k;
+          return o;
+        });
+      } else raw = raw.questions || raw.items || raw.records || raw.data || null;
+    }
+    if (!Array.isArray(raw) || !raw.length) {
+      out.innerHTML = warn('No records found. Check "Records file", "Array key" or tick "Keyed object".');
+      return;
+    }
+
+    var mapped = raw.map(function (r) { return mapRecord(r, spec); });
+    var good = mapped.filter(function (r) {
+      return r.question_code && r.correct_answer != null && String(r.correct_answer).trim() !== '';
+    });
+    var pct = Math.round((good.length / mapped.length) * 100);
+
+    /* Do the images the records point at actually exist in the ZIP? A rule
+       can look perfect and still yield a book of blank pages. */
+    var imgOk = 0, imgMiss = [];
+    good.slice(0, 40).forEach(function (r) {
+      if (!r.question_image_path) return;
+      if (findEntry(r.question_image_path)) imgOk++;
+      else if (imgMiss.length < 4) imgMiss.push(r.question_image_path);
+    });
+
+    var rows = good.slice(0, 5).map(function (r) {
+      return '<tr><td><code>' + esc(r.question_code) + '</code></td>' +
+             '<td>' + esc(r.chapter_title) + '</td>' +
+             '<td><b>' + esc(r.correct_answer) + '</b></td>' +
+             '<td><small>' + esc(r.question_image_path || '—') + '</small></td>' +
+             '<td><small>' + esc(r.solution_image_path || '—') + '</small></td></tr>';
+    }).join('');
+
+    var tone = pct === 100 ? 'ok' : (pct >= 80 ? 'warn' : 'bad');
+    out.innerHTML =
+      '<div class="xr-verdict xr-' + tone + '">' +
+        '<b>' + good.length + ' of ' + mapped.length + ' records usable (' + pct + '%)</b>' +
+        (pct < 100 ? '<span>Records missing a code or answer are skipped by the app.</span>' : '') +
+      '</div>' +
+      (imgOk || imgMiss.length
+        ? '<div class="xr-note">Images checked in first 40: <b>' + imgOk + ' found</b>' +
+          (imgMiss.length ? ', missing e.g. <code>' + esc(imgMiss[0]) + '</code>' : '') + '</div>'
+        : '') +
+      '<table class="xr-table"><thead><tr><th>Code</th><th>Chapter</th><th>Ans</th>' +
+      '<th>Question image</th><th>Solution image</th></tr></thead><tbody>' + rows + '</tbody></table>';
+
+    $('#xr-publish').disabled = good.length === 0;
+  }
+
+  function warn(msg) { return '<div class="xr-verdict xr-bad"><b>' + esc(msg) + '</b></div>'; }
+
+  function manifestSnippet() {
+    var spec = specFromForm();
+    var entry = {
+      id: ($('#xr-packid') || {}).value || 'new-book',
+      name: ($('#xr-packname') || {}).value || 'New Book',
+      file: ($('#xr-packfile') || {}).value || (zipName || 'new_book.zip'),
+      extract: spec
+    };
+    return JSON.stringify(entry, null, 2);
+  }
+
+  /* ── the screen ── */
+  function render(host) {
+    var d = loadDraft();
+    host.innerHTML = [
+      '<div class="card">',
+        '<div class="card-h"><div><h2>Extraction rules</h2>',
+        '<p class="sub">Teach the app how to read a new book\'s ZIP — without shipping a new build. ',
+        'Rules travel inside the pack <code>manifest.json</code> you upload to Hugging Face.</p></div></div>',
+
+        '<div class="xr-steps">',
+          '<div class="xr-step"><span>1</span> Load a sample ZIP</div>',
+          '<div class="xr-step"><span>2</span> Map the fields</div>',
+          '<div class="xr-step"><span>3</span> Dry-run</div>',
+          '<div class="xr-step"><span>4</span> Publish</div>',
+        '</div>',
+
+        '<div class="xr-grid">',
+          '<label class="xr-f"><span>Pack id</span>',
+            '<input id="xr-packid" placeholder="physics-vol-5" value="' + esc(d.packid || '') + '"></label>',
+          '<label class="xr-f"><span>Display name</span>',
+            '<input id="xr-packname" placeholder="Physics Vol 5" value="' + esc(d.packname || '') + '"></label>',
+          '<label class="xr-f"><span>ZIP file name</span>',
+            '<input id="xr-packfile" placeholder="physics_vol_5.zip" value="' + esc(d.packfile || '') + '"></label>',
+        '</div>',
+
+        '<div class="xr-drop" id="xr-drop">',
+          '<input type="file" id="xr-file" accept=".zip" hidden>',
+          '<b>Drop a sample ZIP here</b><span>or click to choose — nothing is uploaded, it is read in this browser</span>',
+        '</div>',
+        '<div id="xr-zipinfo" class="xr-note" hidden></div>',
+
+        '<div class="xr-grid">',
+          '<label class="xr-f"><span>Records file <i>inside the ZIP</i></span>',
+            '<select id="xr-recordsfrom-sel"><option value="">— pick after loading a ZIP —</option></select>',
+            '<input id="xr-recordsfrom" placeholder="data/items.json" value="' + esc(d.recordsFrom || '') + '"></label>',
+          '<label class="xr-f"><span>Array key <i>optional</i></span>',
+            '<input id="xr-recordspath" placeholder="items" value="' + esc(d.recordsPath || '') + '"></label>',
+          '<label class="xr-f"><span>Format</span>',
+            '<select id="xr-format"><option value="json">JSON</option><option value="csv">CSV</option></select></label>',
+        '</div>',
+        '<label class="xr-chk"><input type="checkbox" id="xr-keyed"> Records are a keyed object <i>{ "Q1": {…}, "Q2": {…} }</i></label>',
+
+        '<h3 class="xr-h3">Field mapping <small>source field name in the ZIP; comma-separate fallbacks</small></h3>',
+        '<div class="xr-map">' + TARGETS.map(function (t) {
+          return '<label class="xr-f' + (t[2] ? ' xr-req' : '') + '"><span>' + esc(t[1]) +
+                 (t[2] ? ' <i>required</i>' : '') + '</span>' +
+                 '<input id="xr-map-' + t[0] + '" placeholder="' + esc((ALIAS[t[0]] || [''])[0]) + '"></label>';
+        }).join('') + '</div>',
+
+        '<div class="xr-grid">',
+          '<label class="xr-f"><span>Answer map <i>1:A, 2:B …</i></span>',
+            '<input id="xr-answermap" placeholder="1:A, 2:B, 3:C, 4:D"></label>',
+          '<label class="xr-f"><span>Image base folder <i>optional</i></span>',
+            '<input id="xr-imagebase" placeholder="images/"></label>',
+          '<label class="xr-f"><span>Defaults <i>subject:Physics</i></span>',
+            '<input id="xr-defaults" placeholder="subject:Physics"></label>',
+        '</div>',
+        '<div class="xr-grid">',
+          '<label class="xr-f"><span>Solution path — replace</span>',
+            '<input id="xr-solfrom" placeholder="questions/"></label>',
+          '<label class="xr-f"><span>…with</span>',
+            '<input id="xr-solwith" placeholder="answers/"></label>',
+        '</div>',
+
+        '<div class="xr-actions">',
+          '<button class="btn btn-g" id="xr-suggest">Auto-suggest mapping</button>',
+          '<button class="btn btn-p" id="xr-run">Run dry-run</button>',
+          '<button class="btn btn-g" id="xr-publish" disabled>Show manifest entry</button>',
+        '</div>',
+        '<div id="xr-result"></div>',
+        '<div id="xr-manifest"></div>',
+      '</div>'
+    ].join('');
+
+    injectCSS();
+    wire();
+  }
+
+  function wire() {
+    var fileEl = $('#xr-file'), drop = $('#xr-drop');
+    drop.addEventListener('click', function () { fileEl.click(); });
+    drop.addEventListener('dragover', function (e) { e.preventDefault(); drop.classList.add('on'); });
+    drop.addEventListener('dragleave', function () { drop.classList.remove('on'); });
+    drop.addEventListener('drop', function (e) {
+      e.preventDefault(); drop.classList.remove('on');
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) handleZip(e.dataTransfer.files[0]);
+    });
+    fileEl.addEventListener('change', function () {
+      if (fileEl.files && fileEl.files[0]) handleZip(fileEl.files[0]);
+    });
+
+    $('#xr-recordsfrom-sel').addEventListener('change', async function (e) {
+      if (!e.target.value) return;
+      $('#xr-recordsfrom').value = e.target.value;
+      $('#xr-format').value = /\.csv$/i.test(e.target.value) ? 'csv' : 'json';
+      var info = await inspectFile(e.target.value);
+      var box = $('#xr-zipinfo');
+      if (info.error) { box.innerHTML = esc(info.error); box.hidden = false; return; }
+      if (info.nestedKey) $('#xr-recordspath').value = info.nestedKey;
+      if (info.note === 'keyed object') $('#xr-keyed').checked = true;
+      box.innerHTML = '<b>' + info.count + ' records</b> · fields: ' +
+        info.keys.slice(0, 14).map(function (k) { return '<code>' + esc(k) + '</code>'; }).join(' ');
+      box.hidden = false;
+      autoSuggest();
+    });
+
+    $('#xr-suggest').addEventListener('click', function (e) { e.preventDefault(); autoSuggest(); });
+    $('#xr-run').addEventListener('click', function (e) { e.preventDefault(); dryRun(); });
+    $('#xr-publish').addEventListener('click', function (e) {
+      e.preventDefault();
+      var snip = manifestSnippet();
+      $('#xr-manifest').innerHTML =
+        '<h3 class="xr-h3">Manifest entry <small>add this object to the <code>packs</code> array in your manifest.json, then upload it beside the packs</small></h3>' +
+        '<pre class="xr-pre" id="xr-snip">' + esc(snip) + '</pre>' +
+        '<div class="xr-actions"><button class="btn btn-g" id="xr-copy">Copy</button></div>';
+      $('#xr-copy').addEventListener('click', function (ev) {
+        ev.preventDefault();
+        navigator.clipboard.writeText(snip).then(function () {
+          ev.target.textContent = 'Copied';
+          setTimeout(function () { ev.target.textContent = 'Copy'; }, 1400);
+        });
+      });
+      saveDraft({
+        packid: $('#xr-packid').value, packname: $('#xr-packname').value,
+        packfile: $('#xr-packfile').value, recordsFrom: $('#xr-recordsfrom').value,
+        recordsPath: $('#xr-recordspath').value
+      });
+    });
+  }
+
+  async function handleZip(file) {
+    var box = $('#xr-zipinfo');
+    box.hidden = false; box.textContent = 'Reading ' + file.name + '…';
+    var r = await loadZip(file);
+    if (r.error) { box.textContent = r.error; return; }
+    if (!$('#xr-packfile').value) $('#xr-packfile').value = file.name;
+    var files = candidateFiles();
+    $('#xr-recordsfrom-sel').innerHTML = '<option value="">— choose the records file —</option>' +
+      files.map(function (f) { return '<option value="' + esc(f) + '">' + esc(f) + '</option>'; }).join('');
+    box.innerHTML = '<b>' + r.count + ' files</b> in ' + esc(file.name) +
+      ' · ' + files.length + ' JSON/CSV candidate' + (files.length === 1 ? '' : 's');
+  }
+
+  function injectCSS() {
+    if (document.getElementById('xr-css')) return;
+    var s = document.createElement('style');
+    s.id = 'xr-css';
+    s.textContent = [
+      '.xr-steps{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}',
+      '.xr-step{display:flex;align-items:center;gap:7px;padding:7px 12px;border-radius:99px;',
+      'font-size:12px;color:var(--mut,#9aa4c0);border:1px solid var(--bd,rgba(151,165,204,.18))}',
+      '.xr-step span{width:19px;height:19px;border-radius:50%;display:grid;place-items:center;',
+      'font-size:10.5px;font-weight:800;background:var(--c1,#6D5CFF);color:#fff}',
+      '.xr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:0 0 14px}',
+      '.xr-map{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin:0 0 16px}',
+      '.xr-f{display:flex;flex-direction:column;gap:5px;font-size:12px}',
+      '.xr-f>span{font-weight:700;color:var(--tx,#e8ecf8)}',
+      '.xr-f i{font-style:normal;font-weight:500;color:var(--mut,#8b95a8);font-size:11px}',
+      '.xr-f.xr-req>span{color:#ffcf8a}',
+      '.xr-f input,.xr-f select{padding:9px 11px;border-radius:9px;font:inherit;font-size:12.5px;',
+      'color:var(--tx,#f2f4ff);border:1px solid var(--bd,rgba(151,165,204,.22));',
+      'background:rgba(255,255,255,.04);outline:none}',
+      '.xr-f input:focus,.xr-f select:focus{border-color:var(--c1,#6D5CFF)}',
+      '.xr-chk{display:flex;align-items:center;gap:8px;font-size:12.5px;margin:0 0 16px;',
+      'color:var(--tx,#e8ecf8)}',
+      '.xr-chk i{font-style:normal;color:var(--mut,#8b95a8)}',
+      '.xr-h3{font-size:13px;margin:18px 0 10px;color:var(--tx,#f2f4ff)}',
+      '.xr-h3 small{display:block;font-weight:500;font-size:11.5px;color:var(--mut,#8b95a8);margin-top:3px}',
+      '.xr-drop{display:flex;flex-direction:column;align-items:center;gap:5px;padding:26px 18px;',
+      'border-radius:14px;cursor:pointer;text-align:center;margin:0 0 12px;',
+      'border:1.5px dashed var(--bd,rgba(151,165,204,.3));background:rgba(255,255,255,.02)}',
+      '.xr-drop.on,.xr-drop:hover{border-color:var(--c1,#6D5CFF);background:rgba(109,92,255,.07)}',
+      '.xr-drop b{font-size:13.5px;color:var(--tx,#f2f4ff)}',
+      '.xr-drop span{font-size:11.5px;color:var(--mut,#8b95a8)}',
+      '.xr-note{font-size:12px;color:var(--mut,#9aa4c0);padding:9px 12px;border-radius:9px;',
+      'background:rgba(255,255,255,.03);margin:0 0 14px;line-height:1.7}',
+      '.xr-note code{font-size:11px;padding:1px 5px;border-radius:4px;background:rgba(255,255,255,.07)}',
+      '.xr-actions{display:flex;gap:9px;flex-wrap:wrap;margin:14px 0}',
+      '.xr-verdict{padding:12px 14px;border-radius:11px;margin:0 0 12px;font-size:13px}',
+      '.xr-verdict span{display:block;font-size:11.5px;opacity:.85;margin-top:3px}',
+      '.xr-ok{background:rgba(46,227,162,.12);border:1px solid rgba(46,227,162,.32);color:#7af5d0}',
+      '.xr-warn{background:rgba(255,183,77,.12);border:1px solid rgba(255,183,77,.32);color:#ffcf8a}',
+      '.xr-bad{background:rgba(255,107,129,.12);border:1px solid rgba(255,107,129,.32);color:#ff9db0}',
+      '.xr-table{width:100%;border-collapse:collapse;font-size:12px;margin:0 0 8px}',
+      '.xr-table th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;',
+      'color:var(--mut,#8b95a8);padding:7px 9px;border-bottom:1px solid var(--bd,rgba(151,165,204,.16))}',
+      '.xr-table td{padding:8px 9px;border-bottom:1px solid rgba(151,165,204,.08);color:var(--tx,#e8ecf8)}',
+      '.xr-table code{font-size:11px}',
+      '.xr-table small{color:var(--mut,#8b95a8);font-size:11px;word-break:break-all}',
+      '.xr-pre{padding:14px;border-radius:11px;font-size:11.5px;line-height:1.65;overflow:auto;',
+      'max-height:340px;background:rgba(0,0,0,.32);border:1px solid var(--bd,rgba(151,165,204,.18));',
+      'color:#cfd6ea;white-space:pre;font-family:ui-monospace,monospace}'
+    ].join('');
+    document.head.appendChild(s);
+  }
+
+  window.RSAdminExtract = { render: render };
+})();
+
+route('extract', async host => { window.RSAdminExtract.render(host); });
+
 })();
 </script>
 </body>
 </html>
+
+
